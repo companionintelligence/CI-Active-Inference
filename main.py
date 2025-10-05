@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 
 from ci_active_inference.database import create_tables, get_db_session
 from ci_active_inference.database.dao import (
-    PersonDAO, PlaceDAO, ThingDAO, ContentDAO, EventDAO, DataAnalyzer
+    UserDAO, PersonDAO, PlaceDAO, ThingDAO, ContentDAO, EventDAO, DataAnalyzer
 )
 from ci_active_inference.agents import CIActiveInferenceAgent, CIBehaviorOptimizer
 
@@ -27,100 +27,114 @@ def create_sample_data():
     """Create sample data in the database for testing."""
     try:
         with get_db_session() as conn:
+            # Create or get default user
+            user_dao = UserDAO(conn)
+            users = user_dao.get_all()
+            if len(users) == 0:
+                user = user_dao.create_default_user()
+                user_id = user['id']
+                logger.info(f"Created default user: {user['email']}")
+            else:
+                user = users[0]
+                user_id = user['id']
+                logger.info(f"Using existing user: {user['email']}")
+            
             # Check if data already exists
             person_dao = PersonDAO(conn)
-            if len(person_dao.get_all()) > 0:
+            if len(person_dao.get_all(user_id=user_id)) > 0:
                 logger.info("Sample data already exists, skipping creation")
-                return
+                return user_id
             
-            # Create persons
-            persons_data = [
+            # Create people
+            people_data = [
                 {
-                    "name": "Alice Johnson",
-                    "email": "alice@company.com",
-                    "role": "Data Scientist",
-                    "department": "AI Research"
+                    "first_name": "Alice",
+                    "last_name": "Johnson",
+                    "type": "colleague"
                 },
                 {
-                    "name": "Bob Smith", 
-                    "email": "bob@company.com",
-                    "role": "Software Engineer",
-                    "department": "Engineering"
+                    "first_name": "Bob",
+                    "last_name": "Smith",
+                    "type": "colleague"
                 },
                 {
-                    "name": "Carol Wilson",
-                    "email": "carol@company.com", 
-                    "role": "Project Manager",
-                    "department": "Operations"
+                    "first_name": "Carol",
+                    "last_name": "Wilson",
+                    "type": "manager"
                 }
             ]
             
-            for person_data in persons_data:
-                person_dao.create(person_data)
+            created_people = []
+            for person_data in people_data:
+                person = person_dao.create(person_data, user_id)
+                created_people.append(person)
             
             # Create places
             place_dao = PlaceDAO(conn)
             places_data = [
                 {
                     "name": "Conference Room A",
-                    "place_type": "meeting_room",
-                    "capacity": 10
+                    "type": "meeting_room"
                 },
                 {
                     "name": "Main Office",
-                    "place_type": "office",
-                    "capacity": 50
+                    "type": "office"
                 },
                 {
                     "name": "Lab Space",
-                    "place_type": "laboratory", 
-                    "capacity": 8
+                    "type": "laboratory"
                 }
             ]
             
+            created_places = []
             for place_data in places_data:
-                place_dao.create(place_data)
+                place = place_dao.create(place_data, user_id)
+                created_places.append(place)
             
             # Create things
             thing_dao = ThingDAO(conn)
             things_data = [
                 {
                     "name": "Laptop Dell XPS",
-                    "thing_type": "equipment",
-                    "status": "available"
+                    "type": "equipment",
+                    "description": "Development laptop"
                 },
                 {
                     "name": "Projector Sony",
-                    "thing_type": "equipment", 
-                    "status": "in_use"
+                    "type": "equipment",
+                    "description": "Meeting room projector"
                 },
                 {
                     "name": "AI Development Server",
-                    "thing_type": "software",
-                    "status": "available"
+                    "type": "software",
+                    "description": "Server for AI model training"
                 }
             ]
             
+            created_things = []
             for thing_data in things_data:
-                thing_dao.create(thing_data)
+                thing = thing_dao.create(thing_data, user_id)
+                created_things.append(thing)
             
             # Create content
             content_dao = ContentDAO(conn)
             content_data = [
                 {
                     "title": "Q4 Progress Report",
-                    "content_type": "document",
-                    "creator_id": 1
+                    "type": "document",
+                    "text": "Quarterly progress report content"
                 },
                 {
-                    "title": "Team Meeting Notes", 
-                    "content_type": "document",
-                    "creator_id": 2
+                    "title": "Team Meeting Notes",
+                    "type": "document", 
+                    "text": "Notes from team meeting"
                 }
             ]
             
+            created_content = []
             for content_item in content_data:
-                content_dao.create(content_item)
+                content = content_dao.create(content_item, user_id)
+                created_content.append(content)
             
             # Create events
             event_dao = EventDAO(conn)
@@ -128,25 +142,25 @@ def create_sample_data():
             events_data = [
                 {
                     "name": "Daily Standup",
-                    "event_type": "meeting",
+                    "type": "meeting",
+                    "description": "Daily team standup meeting",
                     "start_time": (now + timedelta(hours=1)).isoformat(),
-                    "end_time": (now + timedelta(hours=1.5)).isoformat(),
-                    "person_id": 1,
-                    "place_id": 1
+                    "end_time": (now + timedelta(hours=1.5)).isoformat()
                 },
                 {
                     "name": "Code Review",
-                    "event_type": "task", 
+                    "type": "task",
+                    "description": "Review code changes",
                     "start_time": (now + timedelta(hours=2)).isoformat(),
-                    "end_time": (now + timedelta(hours=3)).isoformat(),
-                    "person_id": 2
+                    "end_time": (now + timedelta(hours=3)).isoformat()
                 }
             ]
             
             for event_data in events_data:
-                event_dao.create(event_data)
+                event_dao.create(event_data, user_id)
             
             logger.info("Sample data created successfully")
+            return user_id
             
     except Exception as e:
         logger.error(f"Failed to create sample data: {e}")
@@ -163,7 +177,16 @@ def run_inference_demo():
         
         # Get system state
         with get_db_session() as conn:
-            analyzer = DataAnalyzer(conn)
+            # Get or create default user
+            user_dao = UserDAO(conn)
+            users = user_dao.get_all()
+            if users:
+                user_id = users[0]['id']
+            else:
+                user = user_dao.create_default_user()
+                user_id = user['id']
+            
+            analyzer = DataAnalyzer(conn, user_id)
             current_state = analyzer.get_system_state_vector()
             
             logger.info(f"Current system state: {json.dumps(current_state, indent=2)}")
@@ -181,10 +204,11 @@ def run_inference_demo():
             # Initialize optimizer
             optimizer = CIBehaviorOptimizer(agent, analyzer)
             
-            # Test user optimization (if users exist)
-            persons = PersonDAO(conn).get_all(limit=1)
-            if persons:
-                person_id = persons[0]['id']
+            # Test user optimization (if people exist)
+            person_dao = PersonDAO(conn)
+            people = person_dao.get_all(user_id=user_id, limit=1)
+            if people:
+                person_id = people[0]['id']
                 optimization = optimizer.optimize_user_schedule(person_id)
                 logger.info(f"User optimization for person {person_id}:")
                 logger.info(json.dumps(optimization, indent=2))
@@ -209,7 +233,16 @@ def run_training_loop():
         agent = CIActiveInferenceAgent()
         
         with get_db_session() as conn:
-            analyzer = DataAnalyzer(conn)
+            # Get or create default user
+            user_dao = UserDAO(conn)
+            users = user_dao.get_all()
+            if users:
+                user_id = users[0]['id']
+            else:
+                user = user_dao.create_default_user()
+                user_id = user['id']
+            
+            analyzer = DataAnalyzer(conn, user_id)
             
             # Training loop
             for epoch in range(10):  # Run for 10 iterations for demo
@@ -244,6 +277,19 @@ def show_status():
         logger.info("=" * 40)
         
         with get_db_session() as conn:
+            # Get or create default user
+            user_dao = UserDAO(conn)
+            users = user_dao.get_all()
+            if users:
+                user_id = users[0]['id']
+                user_email = users[0]['email']
+            else:
+                user = user_dao.create_default_user()
+                user_id = user['id']
+                user_email = user['email']
+            
+            logger.info(f"Current User: {user_email}")
+            
             # Count data
             person_dao = PersonDAO(conn)
             place_dao = PlaceDAO(conn)
@@ -251,14 +297,14 @@ def show_status():
             content_dao = ContentDAO(conn)
             event_dao = EventDAO(conn)
             
-            logger.info(f"Persons: {len(person_dao.get_all())}")
-            logger.info(f"Places: {len(place_dao.get_all())}")
-            logger.info(f"Things: {len(thing_dao.get_all())}")
-            logger.info(f"Content: {len(content_dao.get_all())}")
-            logger.info(f"Events: {len(event_dao.get_all())}")
+            logger.info(f"People: {len(person_dao.get_all(user_id=user_id))}")
+            logger.info(f"Places: {len(place_dao.get_all(user_id=user_id))}")
+            logger.info(f"Things: {len(thing_dao.get_all(user_id=user_id))}")
+            logger.info(f"Content: {len(content_dao.get_all(user_id=user_id))}")
+            logger.info(f"Events: {len(event_dao.get_all(user_id=user_id))}")
             
             # Show system state
-            analyzer = DataAnalyzer(conn)
+            analyzer = DataAnalyzer(conn, user_id)
             state = analyzer.get_system_state_vector()
             logger.info("\nCurrent System State:")
             logger.info(json.dumps(state, indent=2))
@@ -297,8 +343,8 @@ def main():
         elif args.command == "sample-data":
             logger.info("Creating sample data...")
             create_tables()  # Ensure tables exist
-            create_sample_data()
-            logger.info("Sample data created successfully")
+            user_id = create_sample_data()
+            logger.info(f"Sample data created successfully for user: {user_id}")
             
         elif args.command == "demo":
             # Ensure database and sample data exist
