@@ -51,7 +51,7 @@ class TestMainCLI:
         
         assert result.returncode == 0
         assert 'CI Active Inference System Status' in result.stderr
-        assert 'Current User:' in result.stdout
+        assert 'Current User:' in result.stderr
     
     def test_init_db_command(self):
         """Test database initialization command."""

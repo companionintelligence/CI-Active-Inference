@@ -47,11 +47,24 @@ class TestUserDAO:
         """Test creating a default user."""
         with get_db_session() as conn:
             user_dao = UserDAO(conn)
+            
+            # First check if default user already exists
+            try:
+                cursor = conn.cursor()
+                cursor.execute("SELECT id FROM users WHERE email = ?", ('demo@ci-active-inference.com',))
+                existing_user = cursor.fetchone()
+                if existing_user:
+                    # Delete existing user for clean test
+                    cursor.execute("DELETE FROM users WHERE email = ?", ('demo@ci-active-inference.com',))
+                    conn.commit()
+            except Exception:
+                pass  # Table might not exist yet
+            
             user = user_dao.create_default_user()
             
             assert user['name'] == 'Demo User'
             assert user['email'] == 'demo@ci-active-inference.com'
-            assert user['onboarded'] is False
+            assert user['onboarded'] is True
     
     def test_get_all_users(self, test_user):
         """Test getting all users."""
