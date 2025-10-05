@@ -1,4 +1,5 @@
-# CI Active Inference System
+"""
+CI Active Inference System
 
 This package implements an Active Inference system for predicting and optimizing behavior based on data from a PostgreSQL database containing information about people, places, things, content, and events.
 
@@ -21,3 +22,6 @@ This package implements an Active Inference system for predicting and optimizing
 ## Usage
 
 See the main application entry point and examples for usage instructions.
+"""
+
+__version__ = "0.1.0"

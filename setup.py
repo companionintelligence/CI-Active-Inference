@@ -7,7 +7,6 @@ setup(
     author="Companion Intelligence",
     packages=find_packages(),
     install_requires=[
-        "pymdp>=0.0.7",
         "psycopg2-binary>=2.9.0",
         "numpy>=1.21.0",
         "pandas>=1.3.0",

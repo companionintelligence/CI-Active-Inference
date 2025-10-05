@@ -1,168 +1,185 @@
 """Active Inference agent for CI system behavior prediction and optimization."""
 
-import numpy as np
+import math
+import random
 from typing import Dict, List, Any, Optional, Tuple
-from pymdp import Agent
-from pymdp.utils import random_A_matrix, random_B_matrix
 import logging
 from datetime import datetime, timedelta
-
-from ci_active_inference.database.dao import DataAnalyzer
 
 logger = logging.getLogger(__name__)
 
 
-class CIActiveInferenceAgent:
+class SimpleActiveInferenceAgent:
     """
-    Active Inference agent for CI system using pymdp library.
+    Simplified Active Inference agent for CI system using core Free Energy Principle concepts.
     
     This agent learns patterns in user behavior, resource utilization,
-    and system dynamics to predict and optimize future states.
+    and system dynamics to predict and optimize future states using
+    a simplified implementation of Active Inference principles.
     """
     
     def __init__(self, 
-                 num_obs: List[int] = [10, 5, 8],  # observations: time, activity, resources
-                 num_states: List[int] = [5, 3, 4],  # hidden states: user_intent, system_load, availability
-                 num_controls: List[int] = [3, 2],   # controls: scheduling, resource_allocation
+                 num_obs_dims: int = 10,      # observation dimensions
+                 num_state_dims: int = 5,     # hidden state dimensions  
+                 num_action_dims: int = 3,    # action dimensions
                  learning_rate: float = 0.1,
                  planning_horizon: int = 5):
         """
         Initialize the Active Inference agent.
         
         Args:
-            num_obs: Number of observations for each modality
-            num_states: Number of hidden states for each factor
-            num_controls: Number of control actions for each factor
+            num_obs_dims: Number of observation dimensions
+            num_state_dims: Number of hidden state dimensions
+            num_action_dims: Number of action dimensions
             learning_rate: Learning rate for belief updates
             planning_horizon: Planning horizon for future predictions
         """
         
-        self.num_obs = num_obs
-        self.num_states = num_states
-        self.num_controls = num_controls
+        self.num_obs_dims = num_obs_dims
+        self.num_state_dims = num_state_dims
+        self.num_action_dims = num_action_dims
         self.learning_rate = learning_rate
         self.planning_horizon = planning_horizon
         
-        # Initialize observation and transition models
+        # Initialize model parameters
         self._initialize_models()
         
-        # Create pymdp agent
-        self.agent = Agent(
-            A=self.A_matrices,
-            B=self.B_matrices,
-            C=self.C_vectors,
-            planning_horizon=planning_horizon,
-            inference_algo="VMP",  # Variational Message Passing
-            use_utility=True,
-            use_states_info_gain=True,
-            use_param_info_gain=True,
-            action_precision=16.0,
-            learning_rate=learning_rate
-        )
-        
         # State tracking
-        self.current_state = None
+        self.current_beliefs = [1.0/num_state_dims] * num_state_dims  # Uniform prior
         self.observation_history = []
         self.action_history = []
         self.belief_history = []
+        self.free_energy_history = []
         
-        logger.info("CI Active Inference Agent initialized successfully")
+        logger.info("Simple Active Inference Agent initialized successfully")
     
     def _initialize_models(self):
-        """Initialize the generative model matrices."""
+        """Initialize the generative model parameters."""
         
-        # A matrices (observation model) - how hidden states generate observations
-        self.A_matrices = []
+        # Observation model: P(o|s) - how hidden states generate observations
+        # Initialize with random values and normalize
+        self.observation_model = []
+        for i in range(self.num_obs_dims):
+            row = [random.random() for _ in range(self.num_state_dims)]
+            total = sum(row)
+            if total > 0:
+                row = [x/total for x in row]
+            self.observation_model.append(row)
         
-        # Time-based observations (hour of day patterns)
-        A_time = random_A_matrix([self.num_obs[0], self.num_states[0]])
-        # Make time observations more predictable based on user intent
-        A_time = A_time + np.eye(min(self.num_obs[0], self.num_states[0])) * 2
-        A_time = A_time / A_time.sum(axis=0, keepdims=True)
-        self.A_matrices.append(A_time)
+        # Transition model: P(s'|s,a) - how states evolve with actions
+        self.transition_model = []
+        for a in range(self.num_action_dims):
+            action_transitions = []
+            for s_from in range(self.num_state_dims):
+                row = [random.random() for _ in range(self.num_state_dims)]
+                total = sum(row)
+                if total > 0:
+                    row = [x/total for x in row]
+                action_transitions.append(row)
+            self.transition_model.append(action_transitions)
         
-        # Activity observations (event types, content creation)
-        A_activity = random_A_matrix([self.num_obs[1], self.num_states[1]])
-        A_activity = A_activity / A_activity.sum(axis=0, keepdims=True)
-        self.A_matrices.append(A_activity)
+        # Prior preferences: C(o) - preferred observations
+        self.preferences = [0.1] * self.num_obs_dims
+        for i in range(self.num_obs_dims//2, self.num_obs_dims):
+            self.preferences[i] = 1.0  # Prefer later observation states
         
-        # Resource observations (availability, usage)
-        A_resources = random_A_matrix([self.num_obs[2], self.num_states[2]])
-        A_resources = A_resources / A_resources.sum(axis=0, keepdims=True)
-        self.A_matrices.append(A_resources)
-        
-        # B matrices (transition model) - how states evolve with actions
-        self.B_matrices = []
-        
-        # User intent transitions
-        B_intent = random_B_matrix([self.num_states[0], self.num_states[0], self.num_controls[0]])
-        # Add some structure - intents tend to persist
-        for i in range(self.num_controls[0]):
-            B_intent[:, :, i] += np.eye(self.num_states[0]) * 0.5
-        B_intent = B_intent / B_intent.sum(axis=0, keepdims=True)
-        self.B_matrices.append(B_intent)
-        
-        # System load transitions
-        B_load = random_B_matrix([self.num_states[1], self.num_states[1], self.num_controls[1]])
-        B_load = B_load / B_load.sum(axis=0, keepdims=True)
-        self.B_matrices.append(B_load)
-        
-        # Availability transitions (no control - depends on usage patterns)
-        B_availability = random_B_matrix([self.num_states[2], self.num_states[2], 1])
-        B_availability = B_availability / B_availability.sum(axis=0, keepdims=True)
-        self.B_matrices.append(B_availability)
-        
-        # C vectors (preferences) - what outcomes the agent prefers
-        self.C_vectors = []
-        
-        # Prefer balanced time usage
-        C_time = np.ones(self.num_obs[0]) * 0.1
-        C_time[self.num_obs[0]//2] = 1.0  # Prefer moderate activity
-        self.C_vectors.append(C_time)
-        
-        # Prefer productive activities
-        C_activity = np.ones(self.num_obs[1]) * 0.1
-        C_activity[0] = 1.0  # Prefer high productivity state
-        self.C_vectors.append(C_activity)
-        
-        # Prefer resource availability
-        C_resources = np.ones(self.num_obs[2]) * 0.1
-        C_resources[-1] = 1.0  # Prefer high availability
-        self.C_vectors.append(C_resources)
+        # Action precision (inverse temperature)
+        self.action_precision = 2.0
     
-    def encode_observations(self, system_state: Dict[str, Any]) -> List[int]:
+    def encode_observations(self, system_state: Dict[str, Any]) -> List[float]:
         """
-        Encode system state into observation indices for the agent.
+        Encode system state into observation vector.
         
         Args:
             system_state: Current system state from DataAnalyzer
             
         Returns:
-            List of observation indices
+            Observation vector
         """
-        observations = []
+        observations = [0.0] * self.num_obs_dims
         
-        # Time observation (hour of day mapped to discrete bins)
-        hour = system_state.get("hour_of_day", 12)
-        time_obs = min(hour * self.num_obs[0] // 24, self.num_obs[0] - 1)
-        observations.append(time_obs)
+        # Extract key features and normalize
+        hour = system_state.get("hour_of_day", 12) / 24.0
+        active_events = min(system_state.get("active_events", 0) / 10.0, 1.0)
+        available_resources = min(system_state.get("available_resources", 0) / 20.0, 1.0)
+        total_people = min(system_state.get("total_people", 0) / 100.0, 1.0)
+        day_of_week = system_state.get("day_of_week", 0) / 7.0
         
-        # Activity observation (based on active events and recent content)
-        active_events = system_state.get("active_events", 0)
-        recent_content = system_state.get("recent_content_items", 0)
-        activity_level = min((active_events + recent_content) // 2, self.num_obs[1] - 1)
-        observations.append(activity_level)
+        # Map to observation vector
+        observations[0] = hour
+        observations[1] = active_events
+        observations[2] = available_resources
+        observations[3] = total_people
+        observations[4] = day_of_week
         
-        # Resource observation (based on available resources)
-        available_resources = system_state.get("available_resources", 0)
-        total_things = max(system_state.get("total_things", 1), 1)
-        resource_availability = min(
-            int((available_resources / total_things) * self.num_obs[2]),
-            self.num_obs[2] - 1
-        )
-        observations.append(resource_availability)
+        # Add some derived features
+        if self.num_obs_dims > 5:
+            observations[5] = 1.0 if 9 <= system_state.get("hour_of_day", 12) <= 17 else 0.0  # Business hours
+            observations[6] = active_events * available_resources  # Resource utilization
+            observations[7] = math.sin(2 * math.pi * hour)  # Cyclic time feature
+            observations[8] = math.cos(2 * math.pi * hour)  # Cyclic time feature
+            
+        if self.num_obs_dims > 9:
+            observations[9] = (active_events + available_resources) / 2.0  # Overall activity
         
         return observations
+    
+    def infer_states(self, observations: List[float]) -> List[float]:
+        """
+        Infer hidden states from observations using Bayesian inference.
+        
+        Args:
+            observations: Observation vector
+            
+        Returns:
+            Posterior beliefs over hidden states
+        """
+        # Compute likelihood for each state
+        likelihood = []
+        
+        for s in range(self.num_state_dims):
+            # Simplified likelihood: Gaussian around expected observation
+            expected_obs = [self.observation_model[i][s] for i in range(self.num_obs_dims)]
+            diff_squared = sum((observations[i] - expected_obs[i])**2 for i in range(len(observations)))
+            likelihood.append(math.exp(-0.5 * diff_squared))
+        
+        # Combine with prior beliefs (current beliefs act as prior)
+        posterior = [likelihood[s] * self.current_beliefs[s] for s in range(self.num_state_dims)]
+        
+        # Normalize to get probability distribution
+        total = sum(posterior)
+        if total > 0:
+            posterior = [x/total for x in posterior]
+        else:
+            posterior = [1.0/self.num_state_dims] * self.num_state_dims
+        
+        return posterior
+    
+    def calculate_free_energy(self, observations: List[float], beliefs: List[float]) -> float:
+        """
+        Calculate variational free energy.
+        
+        Args:
+            observations: Current observations
+            beliefs: Current beliefs over states
+            
+        Returns:
+            Free energy value
+        """
+        # Expected likelihood
+        expected_likelihood = 0.0
+        for s in range(self.num_state_dims):
+            expected_obs = [self.observation_model[i][s] for i in range(self.num_obs_dims)]
+            diff_squared = sum((observations[i] - expected_obs[i])**2 for i in range(len(observations)))
+            expected_likelihood += beliefs[s] * math.exp(-0.5 * diff_squared)
+        
+        # Entropy of beliefs (complexity cost)
+        belief_entropy = -sum(b * math.log(b + 1e-10) for b in beliefs)  # Add small value to avoid log(0)
+        
+        # Free energy = negative log likelihood + complexity
+        free_energy = -math.log(expected_likelihood + 1e-10) - belief_entropy
+        
+        return free_energy
     
     def predict_future_state(self, current_state: Dict[str, Any], 
                            time_steps: int = 5) -> List[Dict[str, Any]]:
@@ -177,61 +194,132 @@ class CIActiveInferenceAgent:
             List of predicted future states
         """
         observations = self.encode_observations(current_state)
+        beliefs = self.infer_states(observations)
         
-        # Update agent with current observations
-        qs = self.agent.infer_states(observations)
-        
-        # Get expected future states under different policies
         predictions = []
+        current_beliefs = beliefs[:]
         
         for t in range(time_steps):
-            # Sample from posterior beliefs about future states
-            future_qs = self.agent.infer_policies()
+            # Sample action (simplified policy)
+            action = self._sample_action(current_beliefs)
             
-            # Decode predictions back to system state format
-            predicted_state = self._decode_state_prediction(future_qs, current_state)
+            # Predict next state using transition model
+            next_beliefs = [0.0] * self.num_state_dims
+            for s_next in range(self.num_state_dims):
+                for s_curr in range(self.num_state_dims):
+                    next_beliefs[s_next] += (
+                        current_beliefs[s_curr] * 
+                        self.transition_model[action][s_curr][s_next]
+                    )
+            
+            # Predict observations from beliefs
+            predicted_obs = [0.0] * self.num_obs_dims
+            for i in range(self.num_obs_dims):
+                for s in range(self.num_state_dims):
+                    predicted_obs[i] += self.observation_model[i][s] * next_beliefs[s]
+            
+            # Decode back to system state format
+            predicted_state = self._decode_state_prediction(predicted_obs, current_state, t+1)
             predictions.append(predicted_state)
+            
+            # Update beliefs for next iteration
+            current_beliefs = next_beliefs
         
         return predictions
     
-    def _decode_state_prediction(self, beliefs: List[np.ndarray], 
-                                reference_state: Dict[str, Any]) -> Dict[str, Any]:
+    def _sample_action(self, beliefs: List[float]) -> int:
         """
-        Decode agent beliefs back into system state format.
+        Sample action based on current beliefs and expected free energy.
         
         Args:
-            beliefs: Agent's beliefs about hidden states
+            beliefs: Current beliefs over states
+            
+        Returns:
+            Selected action index
+        """
+        # Calculate expected free energy for each action
+        expected_free_energies = []
+        
+        for action in range(self.num_action_dims):
+            # Predict next state distribution
+            next_beliefs = [0.0] * self.num_state_dims
+            for s_next in range(self.num_state_dims):
+                for s_curr in range(self.num_state_dims):
+                    next_beliefs[s_next] += (
+                        beliefs[s_curr] * 
+                        self.transition_model[action][s_curr][s_next]
+                    )
+            
+            # Expected observations
+            expected_obs = [0.0] * self.num_obs_dims
+            for i in range(self.num_obs_dims):
+                for s in range(self.num_state_dims):
+                    expected_obs[i] += self.observation_model[i][s] * next_beliefs[s]
+            
+            # Calculate expected free energy (simplified)
+            # Pragmatic value (preference satisfaction)
+            pragmatic_value = sum(expected_obs[i] * self.preferences[i] for i in range(len(expected_obs)))
+            
+            # Epistemic value (information gain) - simplified as state entropy
+            epistemic_value = -sum(b * math.log(b + 1e-10) for b in next_beliefs)
+            
+            expected_free_energies.append(-(pragmatic_value + epistemic_value))
+        
+        # Sample action using softmax
+        # Convert to probabilities
+        max_fe = max(expected_free_energies)
+        exp_values = [math.exp(-self.action_precision * (fe - max_fe)) for fe in expected_free_energies]
+        total = sum(exp_values)
+        action_probs = [x/total for x in exp_values]
+        
+        # Sample from distribution
+        rand_val = random.random()
+        cumsum = 0.0
+        for action, prob in enumerate(action_probs):
+            cumsum += prob
+            if rand_val <= cumsum:
+                return action
+        
+        return self.num_action_dims - 1  # Fallback
+    
+    def _decode_state_prediction(self, predicted_obs: List[float], 
+                                reference_state: Dict[str, Any],
+                                time_step: int) -> Dict[str, Any]:
+        """
+        Decode predicted observations back into system state format.
+        
+        Args:
+            predicted_obs: Predicted observation vector
             reference_state: Reference state for scaling
+            time_step: Future time step
             
         Returns:
             Predicted system state
         """
-        # Extract most likely states
-        intent_state = np.argmax(beliefs[0])
-        load_state = np.argmax(beliefs[1])
-        availability_state = np.argmax(beliefs[2])
+        # Extract predictions from observation vector
+        predicted_hour = max(0, min(23, int(predicted_obs[0] * 24)))
+        predicted_events = max(0, int(predicted_obs[1] * 10))
+        predicted_resources = max(0, int(predicted_obs[2] * 20))
         
-        # Map back to system metrics
-        base_events = reference_state.get("active_events", 0)
-        base_resources = reference_state.get("available_resources", 0)
-        
-        # Predict changes based on inferred states
-        predicted_events = base_events + (intent_state - 2)  # Center around current
-        predicted_resources = base_resources + (availability_state - 2)
+        # Calculate confidence as inverse of prediction uncertainty
+        variance = sum((x - 0.5)**2 for x in predicted_obs) / len(predicted_obs)
+        confidence = 1.0 / (1.0 + variance)
         
         predicted_state = reference_state.copy()
         predicted_state.update({
-            "predicted_active_events": max(0, predicted_events),
-            "predicted_available_resources": max(0, predicted_resources),
-            "predicted_system_load": ["low", "medium", "high"][load_state] if load_state < 3 else "high",
-            "confidence": float(np.max(beliefs[0]) * np.max(beliefs[1]) * np.max(beliefs[2]))
+            "predicted_hour": predicted_hour,
+            "predicted_active_events": predicted_events,
+            "predicted_available_resources": predicted_resources,
+            "confidence": float(confidence),
+            "time_step": time_step,
+            "timestamp": (datetime.now() + timedelta(hours=time_step)).isoformat()
         })
         
         return predicted_state
     
     def recommend_actions(self, current_state: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Recommend optimal actions based on current state and predictions.
+        Recommend optimal actions based on current state.
         
         Args:
             current_state: Current system state
@@ -240,68 +328,102 @@ class CIActiveInferenceAgent:
             Recommended actions and their expected outcomes
         """
         observations = self.encode_observations(current_state)
+        beliefs = self.infer_states(observations)
         
-        # Infer current state
-        qs = self.agent.infer_states(observations)
+        # Sample optimal action
+        action = self._sample_action(beliefs)
         
-        # Get action recommendations
-        policy = self.agent.infer_policies()
-        action = self.agent.sample_action()
+        # Calculate expected outcomes
+        next_beliefs = [0.0] * self.num_state_dims
+        for s_next in range(self.num_state_dims):
+            for s_curr in range(self.num_state_dims):
+                next_beliefs[s_next] += (
+                    beliefs[s_curr] * 
+                    self.transition_model[action][s_curr][s_next]
+                )
         
-        # Interpret actions
         recommendations = {
-            "scheduling_action": self._interpret_scheduling_action(action[0]),
-            "resource_action": self._interpret_resource_action(action[1]),
-            "confidence": float(np.max(qs[0])),
-            "expected_outcome": self._predict_action_outcome(action, current_state),
+            "action_type": self._interpret_action(action),
+            "confidence": float(max(beliefs)),
+            "expected_state_change": float(max(next_beliefs) - max(beliefs)),
+            "predicted_outcome": self._predict_action_outcome(action, current_state),
+            "free_energy": self.calculate_free_energy(observations, beliefs),
             "timestamp": datetime.now().isoformat()
         }
         
         return recommendations
     
-    def _interpret_scheduling_action(self, action_idx: int) -> str:
-        """Interpret scheduling action index."""
-        actions = ["reduce_scheduling", "maintain_current", "increase_scheduling"]
+    def _interpret_action(self, action_idx: int) -> str:
+        """Interpret action index into meaningful action."""
+        actions = ["optimize_resources", "maintain_current", "increase_activity"]
         return actions[min(action_idx, len(actions) - 1)]
     
-    def _interpret_resource_action(self, action_idx: int) -> str:
-        """Interpret resource allocation action index."""
-        actions = ["optimize_allocation", "maintain_current"]
-        return actions[min(action_idx, len(actions) - 1)]
+    def _predict_action_outcome(self, action: int, current_state: Dict[str, Any]) -> str:
+        """Predict the qualitative outcome of an action."""
+        if action == 0:
+            return "improved_efficiency"
+        elif action == 1:
+            return "stable_state"
+        else:
+            return "increased_productivity"
     
-    def _predict_action_outcome(self, action: List[int], 
-                               current_state: Dict[str, Any]) -> Dict[str, str]:
-        """Predict the outcome of taking specific actions."""
-        return {
-            "productivity": "increased" if action[0] == 2 else "maintained",
-            "resource_efficiency": "optimized" if action[1] == 0 else "maintained",
-            "system_load": "balanced" if action[0] == 1 else "variable"
-        }
-    
-    def update_beliefs(self, observations: List[int], action: Optional[List[int]] = None):
+    def update_beliefs(self, observations: List[float], action: Optional[int] = None):
         """
-        Update agent beliefs based on new observations.
+        Update agent beliefs and learn from experience.
         
         Args:
             observations: New observations
             action: Action that was taken (if any)
         """
-        # Update agent's beliefs
-        qs = self.agent.infer_states(observations)
+        # Infer current state
+        new_beliefs = self.infer_states(observations)
+        
+        # Calculate free energy
+        free_energy = self.calculate_free_energy(observations, new_beliefs)
+        
+        # Update models with learning
+        if len(self.belief_history) > 0:
+            prev_beliefs = self.belief_history[-1]
+            
+            # Update observation model (simplified learning)
+            for s in range(self.num_state_dims):
+                for i in range(self.num_obs_dims):
+                    update = self.learning_rate * new_beliefs[s] * observations[i]
+                    self.observation_model[i][s] += update
+                
+                # Re-normalize observation model column
+                col_sum = sum(self.observation_model[i][s] for i in range(self.num_obs_dims))
+                if col_sum > 0:
+                    for i in range(self.num_obs_dims):
+                        self.observation_model[i][s] /= col_sum
+            
+            # Update transition model if action was taken
+            if action is not None and len(self.action_history) > 0:
+                prev_action = self.action_history[-1]
+                for s_prev in range(self.num_state_dims):
+                    for s_curr in range(self.num_state_dims):
+                        update = (self.learning_rate * prev_beliefs[s_prev] * new_beliefs[s_curr])
+                        self.transition_model[prev_action][s_prev][s_curr] += update
+                
+                # Re-normalize transition model
+                for a in range(self.num_action_dims):
+                    for s in range(self.num_state_dims):
+                        row_sum = sum(self.transition_model[a][s])
+                        if row_sum > 0:
+                            for s_next in range(self.num_state_dims):
+                                self.transition_model[a][s][s_next] /= row_sum
         
         # Store history
+        self.current_beliefs = new_beliefs
         self.observation_history.append(observations)
-        self.belief_history.append(qs)
+        self.belief_history.append(new_beliefs)
+        self.free_energy_history.append(free_energy)
         
         if action is not None:
             self.action_history.append(action)
-            # Update transition models based on experience
-            self.agent.update_B(qs)
         
-        # Update observation models
-        self.agent.update_A(observations)
-        
-        logger.debug(f"Updated beliefs - Confidence: {np.max(qs[0]):.3f}")
+        logger.debug(f"Updated beliefs - Confidence: {max(new_beliefs):.3f}, "
+                    f"Free Energy: {free_energy:.3f}")
     
     def get_learning_progress(self) -> Dict[str, Any]:
         """Get metrics about the agent's learning progress."""
@@ -309,15 +431,24 @@ class CIActiveInferenceAgent:
             return {"status": "No learning data available"}
         
         # Calculate confidence trends
-        confidences = [np.max(beliefs[0]) for beliefs in self.belief_history[-10:]]
+        recent_beliefs = self.belief_history[-10:] if len(self.belief_history) >= 10 else self.belief_history
+        confidences = [max(beliefs) for beliefs in recent_beliefs]
+        
+        recent_fe = self.free_energy_history[-10:] if len(self.free_energy_history) >= 10 else self.free_energy_history
         
         return {
             "total_observations": len(self.observation_history),
-            "recent_confidence": np.mean(confidences) if confidences else 0.0,
+            "recent_confidence": sum(confidences) / len(confidences) if confidences else 0.0,
             "confidence_trend": "improving" if len(confidences) > 1 and confidences[-1] > confidences[0] else "stable",
+            "recent_free_energy": sum(recent_fe) / len(recent_fe) if recent_fe else 0.0,
+            "free_energy_trend": "decreasing" if len(recent_fe) > 1 and recent_fe[-1] < recent_fe[0] else "stable",
             "learning_rate": self.learning_rate,
             "planning_horizon": self.planning_horizon
         }
+
+
+# Alias for compatibility
+CIActiveInferenceAgent = SimpleActiveInferenceAgent
 
 
 class CIBehaviorOptimizer:
@@ -325,7 +456,7 @@ class CIBehaviorOptimizer:
     High-level behavior optimization system using Active Inference.
     """
     
-    def __init__(self, agent: CIActiveInferenceAgent, data_analyzer: DataAnalyzer):
+    def __init__(self, agent: CIActiveInferenceAgent, data_analyzer):
         self.agent = agent
         self.data_analyzer = data_analyzer
         self.optimization_history = []
@@ -376,16 +507,16 @@ class CIBehaviorOptimizer:
         # Generate allocation recommendations
         allocation_recommendations = []
         for i, pred_state in enumerate(predictions):
-            predicted_load = pred_state.get("predicted_active_events", 0)
-            available_resources = pred_state.get("predicted_available_resources", 0)
+            predicted_events = pred_state.get("predicted_active_events", 0)
+            predicted_resources = pred_state.get("predicted_available_resources", 0)
             
-            if predicted_load > available_resources:
+            if predicted_events > predicted_resources:
                 allocation_recommendations.append({
                     "hour": i,
                     "action": "increase_availability",
-                    "urgency": "high" if predicted_load > available_resources * 1.5 else "medium"
+                    "urgency": "high" if predicted_events > predicted_resources * 1.5 else "medium"
                 })
-            elif available_resources > predicted_load * 2:
+            elif predicted_resources > predicted_events * 2:
                 allocation_recommendations.append({
                     "hour": i,
                     "action": "reduce_allocation", 
@@ -409,7 +540,8 @@ class CIBehaviorOptimizer:
             base_score += 0.2
         
         # Reward confident predictions
-        avg_confidence = np.mean([p.get("confidence", 0) for p in predictions])
+        confidences = [p.get("confidence", 0) for p in predictions]
+        avg_confidence = sum(confidences) / len(confidences) if confidences else 0
         base_score += avg_confidence * 0.3
         
         return min(base_score, 1.0)
@@ -431,4 +563,4 @@ class CIBehaviorOptimizer:
             else:
                 utilization_scores.append(max(0.0, 1.0 - abs(utilization - 0.75) * 2))
         
-        return np.mean(utilization_scores)
+        return sum(utilization_scores) / len(utilization_scores)
