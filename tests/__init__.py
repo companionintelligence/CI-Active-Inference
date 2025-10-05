@@ -1,0 +1,1 @@
+# Test configuration for CI Active Inference Slopbox

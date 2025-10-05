@@ -2,6 +2,107 @@
 
 ## Blueprint for a Personalized Active Inference Agent: A pymdp Implementation Guide
 
+## Quick Start
+
+### Setup (Linux)
+
+1. **Clone and setup the environment:**
+   ```bash
+   git clone https://github.com/companionintelligence/CI-Active-Inference-Slopbox.git
+   cd CI-Active-Inference-Slopbox
+   ./setup.sh
+   ```
+
+2. **Run the demonstration:**
+   ```bash
+   ./run_demo.sh
+   ```
+
+3. **Start the API server:**
+   ```bash
+   ./run_api.sh
+   ```
+
+4. **Run tests:**
+   ```bash
+   ./run_tests.sh
+   ```
+
+### Manual Setup
+
+If you prefer manual setup:
+
+```bash
+# Install Python 3.8+ and pip
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+# Configure environment
+cp .env.example .env
+# Edit .env with your settings
+
+# Initialize database and sample data
+python main.py init-db
+python main.py sample-data
+
+# Test the system
+python main.py demo
+```
+
+### Available Commands
+
+```bash
+python main.py --help          # Show all available commands
+python main.py init-db         # Initialize database
+python main.py sample-data     # Create sample data
+python main.py demo            # Run Active Inference demonstration
+python main.py train           # Run training loop
+python main.py status          # Show system status
+```
+
+### API Server
+
+Start the FastAPI server:
+```bash
+./run_api.sh
+# or manually:
+uvicorn ci_active_inference.api:app --host 0.0.0.0 --port 8000 --reload
+```
+
+The API will be available at:
+- API: http://localhost:8000
+- Documentation: http://localhost:8000/docs
+
+### Testing
+
+Run the comprehensive test suite:
+```bash
+./run_tests.sh
+# or manually:
+pytest tests/ -v --cov=ci_active_inference --cov-report=term-missing
+```
+
+## Requirements
+
+- Python 3.8+
+- Linux (tested on Ubuntu 20.04+)
+- 2GB RAM minimum
+- 1GB disk space
+
+## Dependencies
+
+Core dependencies:
+- **pymdp**: Active Inference framework
+- **FastAPI**: Web API framework
+- **SQLAlchemy**: Database ORM
+- **pandas/numpy**: Data processing
+- **psycopg2**: PostgreSQL adapter (optional)
+
+See `requirements.txt` for complete list.
+
+---
+
 This repository provides a comprehensive development plan for implementing a personalized Active Inference agent using `pymdp` that leverages your personal data to predict behavior and suggest optimal actions for health and happiness.
 
 ---
