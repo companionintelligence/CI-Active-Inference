@@ -1,10 +1,10 @@
-# CI-Active-Inference-Slopbox
+# PRIVATE AND CONFIDENTIAL 
+### COPYRIGHT 2025 - DO NOT DISTRIBUTE
+# PROPERTY OF COMPANION INTELLIGENCE - LIFESCOPE INC
 
-## Blueprint for a Personalized Active Inference Agent: A pymdp Implementation Guide
+# CI Personalized Active Inference Agent
 
-## Quick Start
-
-### Setup (Linux)
+## Quick Setup (Linux)
 
 1. **Clone and setup the environment:**
    ```bash
@@ -1076,28 +1076,3 @@ Start with Phase 1 and iterate rapidly through the validation cycle to build con
 - [Active Inference: A Process Theory](https://www.fil.ion.ucl.ac.uk/~karl/A%20tutorial%20on%20the%20free-energy%20framework.pdf): Theoretical foundations
 - [FastAPI Documentation](https://fastapi.tiangolo.com/): Backend framework guide
 - [React Documentation](https://reactjs.org/docs/): Frontend framework guide
-
-### Contributing
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature-name`
-3. Make your changes following the development guidelines
-4. Add tests for new functionality
-5. Submit a pull request with a clear description
-
-### License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-### Citation
-
-If you use this work in your research, please cite:
-
-```bibtex
-@software{ci_active_inference_slopbox,
-  title={CI-Active-Inference-Slopbox: A pymdp Implementation Guide},
-  author={Companion Intelligence},
-  year={2024},
-  url={https://github.com/companionintelligence/CI-Active-Inference-Slopbox}
-}
-```
