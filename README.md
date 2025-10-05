@@ -105,9 +105,6 @@ See `requirements.txt` for complete list.
 
 This repository provides a comprehensive development plan for implementing a personalized Active Inference agent using `pymdp` that leverages your personal data to predict behavior and suggest optimal actions for health and happiness.
 
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
 ## Quick Start
 
 ```bash
