@@ -1,4 +1,4 @@
-# CI-Active-Inference-Slopbox Development Plan
+# CI Active Inference Development Plan
 
 ## Overview
 
