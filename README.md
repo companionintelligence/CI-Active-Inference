@@ -4,6 +4,70 @@
 
 This repository provides a comprehensive development plan for implementing a personalized Active Inference agent using `pymdp` that leverages your personal data to predict behavior and suggest optimal actions for health and happiness.
 
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+## Quick Start
+
+```bash
+# Clone the repository
+git clone https://github.com/companionintelligence/CI-Active-Inference-Slopbox.git
+cd CI-Active-Inference-Slopbox
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Set up environment variables
+cp .env.example .env
+# Edit .env with your database configuration
+
+# Initialize database
+python main.py init-db
+
+# Create sample data
+python main.py sample-data
+
+# Run Active Inference demonstration
+python main.py demo
+
+# Check system status
+python main.py status
+```
+
+## Installation & Setup
+
+### Prerequisites
+- Python 3.8 or higher
+- PostgreSQL 12+ 
+- Node.js 16+ (for frontend development)
+
+### Environment Setup
+1. **Install Python dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **Configure PostgreSQL:**
+   ```bash
+   # Create database
+   createdb ci_active_inference
+   
+   # Set environment variables in .env
+   DATABASE_URL=postgresql://user:password@localhost/ci_active_inference
+   ```
+
+3. **Initialize database schema:**
+   ```bash
+   python main.py init-db
+   ```
+
+4. **Create sample data:**
+   ```bash
+   python main.py sample-data
+   ```
+
+For detailed development setup, see [development-plan.md](./development-plan.md).
+
 ---
 
 ## Table of Contents
@@ -899,3 +963,43 @@ This blueprint provides a comprehensive roadmap for implementing a personalized 
 The key insight is that Active Inference provides both **prediction** and **optimization** in a single framework, eliminating the need for separate recommendation systems while providing intrinsic motivation for both exploitation and exploration.
 
 Start with Phase 1 and iterate rapidly through the validation cycle to build confidence in each component before moving to the next phase.
+
+---
+
+## Additional Resources
+
+- **[Development Plan](./development-plan.md)**: Detailed 16-week implementation roadmap
+- **[Copilot Instructions](./.github/copilot-instructions.md)**: AI assistant guidelines for development
+- **[Database Schema](./database-schema.puml)**: Complete database design documentation
+
+### External References
+
+- [pymdp Documentation](https://pymdp-rtd.readthedocs.io/): Official Active Inference framework docs
+- [Active Inference: A Process Theory](https://www.fil.ion.ucl.ac.uk/~karl/A%20tutorial%20on%20the%20free-energy%20framework.pdf): Theoretical foundations
+- [FastAPI Documentation](https://fastapi.tiangolo.com/): Backend framework guide
+- [React Documentation](https://reactjs.org/docs/): Frontend framework guide
+
+### Contributing
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature-name`
+3. Make your changes following the development guidelines
+4. Add tests for new functionality
+5. Submit a pull request with a clear description
+
+### License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+### Citation
+
+If you use this work in your research, please cite:
+
+```bibtex
+@software{ci_active_inference_slopbox,
+  title={CI-Active-Inference-Slopbox: A pymdp Implementation Guide},
+  author={Companion Intelligence},
+  year={2024},
+  url={https://github.com/companionintelligence/CI-Active-Inference-Slopbox}
+}
+```
