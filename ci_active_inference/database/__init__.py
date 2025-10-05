@@ -280,8 +280,154 @@ def create_tables():
             )
         ''')
         
+        # Create temporal views for Active Inference feature extraction
+        cursor.execute('''
+            CREATE VIEW IF NOT EXISTS daily_state_observations AS
+            SELECT 
+                e.user_id,
+                DATE(e.start_time) as day,
+                strftime('%H', e.start_time) as hour_bucket,
+                
+                -- Context classification
+                CASE 
+                  WHEN LOWER(e.name) LIKE '%work%' OR LOWER(e.name) LIKE '%meeting%' THEN 'work'
+                  WHEN LOWER(e.name) LIKE '%exercise%' OR LOWER(e.name) LIKE '%gym%' THEN 'health'
+                  WHEN LOWER(e.name) LIKE '%social%' OR LOWER(e.name) LIKE '%dinner%' THEN 'social'
+                  WHEN LOWER(e.name) LIKE '%home%' OR LOWER(e.name) LIKE '%rest%' THEN 'home'
+                  ELSE 'other'
+                END as context_bucket,
+                
+                -- Energy level inference
+                CASE 
+                  WHEN COUNT(e.id) > 3 THEN 'high'
+                  WHEN COUNT(e.id) > 1 THEN 'medium'
+                  ELSE 'low'
+                END as energy_bucket,
+                
+                -- Mood inference from context
+                CASE 
+                  WHEN LOWER(e.name) LIKE '%social%' OR LOWER(e.name) LIKE '%exercise%' THEN 'positive'
+                  WHEN LOWER(e.name) LIKE '%work%' AND COUNT(e.id) > 2 THEN 'neutral'
+                  WHEN LOWER(e.name) LIKE '%work%' AND COUNT(e.id) > 4 THEN 'negative'
+                  ELSE 'neutral'
+                END as mood_bucket,
+                
+                -- Digital behavior from content
+                CASE 
+                  WHEN c.type LIKE '%communication%' THEN 'communication'
+                  WHEN c.type LIKE '%entertainment%' THEN 'entertainment' 
+                  WHEN c.type LIKE '%work%' OR c.type LIKE '%document%' THEN 'work-focus'
+                  ELSE 'other'
+                END as digital_behavior_type,
+                
+                -- Location context
+                CASE 
+                  WHEN LOWER(p.name) LIKE '%home%' THEN 'home'
+                  WHEN LOWER(p.name) LIKE '%office%' OR LOWER(p.name) LIKE '%work%' THEN 'office'
+                  WHEN LOWER(p.name) LIKE '%park%' OR LOWER(p.name) LIKE '%outdoor%' THEN 'outdoor'
+                  WHEN LOWER(p.name) LIKE '%restaurant%' OR LOWER(p.name) LIKE '%cafe%' THEN 'social-venue'
+                  ELSE 'other'
+                END as location_category,
+                
+                -- Social context
+                CASE 
+                  WHEN COUNT(ep.person_id) = 0 THEN 'alone'
+                  WHEN COUNT(ep.person_id) <= 2 THEN 'small-group'
+                  ELSE 'large-group'
+                END as social_category,
+                
+                COUNT(e.id) as event_count,
+                AVG(CASE 
+                  WHEN e.end_time IS NOT NULL 
+                  THEN (strftime('%s', e.end_time) - strftime('%s', e.start_time)) / 60.0 
+                  ELSE 60 
+                END) as avg_duration_minutes
+                
+            FROM events e
+            LEFT JOIN locations l ON e.user_id = l.user_id 
+              AND datetime(l.datetime) BETWEEN datetime(e.start_time) AND COALESCE(datetime(e.end_time), datetime(e.start_time, '+1 hour'))
+            LEFT JOIN places p ON l.place_id = p.id
+            LEFT JOIN content c ON e.id = c.event_id
+            LEFT JOIN event_person ep ON e.id = ep.event_id
+            
+            GROUP BY e.user_id, day, hour_bucket
+        ''')
+        
+        # Create hourly aggregation view for real-time features
+        cursor.execute('''
+            CREATE VIEW IF NOT EXISTS hourly_feature_aggregates AS
+            SELECT 
+                e.user_id,
+                strftime('%Y-%m-%d %H:00:00', e.start_time) as hour_bucket,
+                
+                COUNT(e.id) as total_events,
+                COUNT(DISTINCT c.id) as content_items,
+                COUNT(DISTINCT ep.person_id) as people_involved,
+                COUNT(DISTINCT l.place_id) as locations_visited,
+                
+                -- Digital activity aggregation
+                COUNT(CASE WHEN c.type LIKE '%work%' THEN 1 END) as work_content,
+                COUNT(CASE WHEN c.type LIKE '%communication%' THEN 1 END) as communication_content,
+                COUNT(CASE WHEN c.type LIKE '%entertainment%' THEN 1 END) as entertainment_content,
+                
+                -- Context aggregation
+                COUNT(CASE WHEN LOWER(e.name) LIKE '%work%' THEN 1 END) as work_events,
+                COUNT(CASE WHEN LOWER(e.name) LIKE '%social%' THEN 1 END) as social_events,
+                COUNT(CASE WHEN LOWER(e.name) LIKE '%exercise%' THEN 1 END) as health_events,
+                
+                AVG(CASE 
+                  WHEN e.end_time IS NOT NULL 
+                  THEN (strftime('%s', e.end_time) - strftime('%s', e.start_time)) / 60.0 
+                  ELSE 60 
+                END) as avg_event_duration
+                
+            FROM events e
+            LEFT JOIN content c ON e.id = c.event_id
+            LEFT JOIN event_person ep ON e.id = ep.event_id
+            LEFT JOIN locations l ON e.user_id = l.user_id 
+              AND datetime(l.datetime) BETWEEN datetime(e.start_time) AND COALESCE(datetime(e.end_time), datetime(e.start_time, '+1 hour'))
+            
+            GROUP BY e.user_id, hour_bucket
+        ''')
+        
+        # Create transition sequences view for B matrix construction
+        cursor.execute('''
+            CREATE VIEW IF NOT EXISTS state_transition_sequences AS
+            WITH ordered_states AS (
+              SELECT 
+                user_id, day, hour_bucket,
+                context_bucket, energy_bucket, mood_bucket,
+                digital_behavior_type, location_category, social_category,
+                ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY day, hour_bucket) as seq_num
+              FROM daily_state_observations
+            )
+            SELECT 
+              curr.user_id,
+              curr.day as curr_day,
+              curr.hour_bucket as curr_hour,
+              curr.context_bucket as curr_context,
+              curr.energy_bucket as curr_energy,
+              curr.mood_bucket as curr_mood,
+              next.context_bucket as next_context,
+              next.energy_bucket as next_energy,
+              next.mood_bucket as next_mood,
+              
+              -- Infer action from transition
+              CASE 
+                WHEN next.context_bucket = 'work' THEN 'work_focus'
+                WHEN next.context_bucket = 'social' THEN 'social_engage'
+                WHEN next.context_bucket = 'health' THEN 'physical_exercise'
+                WHEN next.context_bucket = 'home' THEN 'rest_recover'
+                ELSE 'no_action'
+              END as inferred_action
+              
+            FROM ordered_states curr
+            JOIN ordered_states next ON curr.user_id = next.user_id 
+              AND next.seq_num = curr.seq_num + 1
+        ''')
+
         conn.commit()
-        logger.info("Database tables created successfully according to CI-Server schema")
+        logger.info("Database tables and temporal views created successfully according to CI-Server schema")
 
 
 def drop_tables():
