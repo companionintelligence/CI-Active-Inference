@@ -83,12 +83,13 @@ class PyMDPActiveInferenceAgent:
     
     def _initialize_observation_model(self) -> np.ndarray:
         """Initialize observation model A matrices."""
-        # Initialize A matrices for each observation modality
-        A = utils.obj_array_zeros([[self.num_obs[g], *self.num_states] for g in range(len(self.num_obs))])
+        # Initialize A matrices for each observation modality using proper pymdp format
+        A = utils.obj_array([len(self.num_obs)])
         
         for g in range(len(self.num_obs)):
-            # Initialize with uniform + noise for identifiability
-            A[g] = np.random.dirichlet(np.ones(self.num_obs[g]), size=np.prod(self.num_states)).reshape([self.num_obs[g], *self.num_states])
+            # Create A matrix with proper shape: [num_obs_g, num_states[0], num_states[1], ...]
+            shape = [self.num_obs[g]] + self.num_states
+            A[g] = np.random.dirichlet(np.ones(self.num_obs[g]), size=np.prod(self.num_states)).T.reshape(shape)
             # Normalize to ensure proper probability distributions
             A[g] = utils.norm_dist(A[g])
         
@@ -96,10 +97,11 @@ class PyMDPActiveInferenceAgent:
     
     def _initialize_transition_model(self) -> np.ndarray:
         """Initialize transition model B matrices."""
-        # Initialize B matrices for each hidden state factor
-        B = utils.obj_array_zeros([[self.num_states[f], self.num_states[f], self.num_actions[0]] for f in range(len(self.num_states))])
+        # Initialize B matrices for each hidden state factor using proper pymdp format
+        B = utils.obj_array([len(self.num_states)])
         
         for f in range(len(self.num_states)):
+            B[f] = np.zeros((self.num_states[f], self.num_states[f], self.num_actions[0]))
             for action in range(self.num_actions[0]):
                 # Initialize with identity + small random transitions
                 identity_part = np.eye(self.num_states[f]) * 0.8
@@ -112,8 +114,8 @@ class PyMDPActiveInferenceAgent:
     
     def _initialize_preferences(self) -> np.ndarray:
         """Initialize preference vectors C."""
-        # Initialize C vectors for each observation modality
-        C = utils.obj_array_zeros([self.num_obs[g] for g in range(len(self.num_obs))])
+        # Initialize C vectors for each observation modality using proper pymdp format
+        C = utils.obj_array([len(self.num_obs)])
         
         # Set preferences for each modality
         # Digital behavior preferences (0: passive, 1: active, 2: social, 3: productive)
@@ -132,8 +134,8 @@ class PyMDPActiveInferenceAgent:
     
     def _initialize_priors(self) -> np.ndarray:
         """Initialize prior beliefs D."""
-        # Initialize D vectors for each hidden state factor
-        D = utils.obj_array_zeros([self.num_states[f] for f in range(len(self.num_states))])
+        # Initialize D vectors for each hidden state factor using proper pymdp format
+        D = utils.obj_array([len(self.num_states)])
         
         # Energy levels (0: low, 1: medium, 2: high)
         D[0] = np.array([0.2, 0.6, 0.2])  # Prior belief: mostly medium energy
@@ -436,10 +438,10 @@ class PyMDPActiveInferenceAgent:
     
     def load_model(self, model_data: Dict[str, Any]):
         """Load model parameters from saved data."""
-        self.A = utils.obj_array([np.array(A) for A in model_data["A_matrices"]])
-        self.B = utils.obj_array([np.array(B) for B in model_data["B_matrices"]])
-        self.C = utils.obj_array([np.array(C) for C in model_data["C_vectors"]])
-        self.D = utils.obj_array([np.array(D) for D in model_data["D_vectors"]])
+        self.A = utils.obj_array_from_list([np.array(A) for A in model_data["A_matrices"]])
+        self.B = utils.obj_array_from_list([np.array(B) for B in model_data["B_matrices"]])
+        self.C = utils.obj_array_from_list([np.array(C) for C in model_data["C_vectors"]])
+        self.D = utils.obj_array_from_list([np.array(D) for D in model_data["D_vectors"]])
         self.learning_iterations = model_data.get("learning_iterations", 0)
         
         # Update agent with loaded parameters
