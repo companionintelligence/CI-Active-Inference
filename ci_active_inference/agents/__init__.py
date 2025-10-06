@@ -431,10 +431,10 @@ class PyMDPActiveInferenceAgent:
     
     def load_model(self, model_data: Dict[str, Any]):
         """Load model parameters from saved data."""
-        self.A = utils.obj_array_from_list([np.array(A) for A in model_data["A_matrices"]])
-        self.B = utils.obj_array_from_list([np.array(B) for B in model_data["B_matrices"]])
-        self.C = utils.obj_array_from_list([np.array(C) for C in model_data["C_vectors"]])
-        self.D = utils.obj_array_from_list([np.array(D) for D in model_data["D_vectors"]])
+        self.A = utils.obj_array([np.array(A) for A in model_data["A_matrices"]])
+        self.B = utils.obj_array([np.array(B) for B in model_data["B_matrices"]])
+        self.C = utils.obj_array([np.array(C) for C in model_data["C_vectors"]])
+        self.D = utils.obj_array([np.array(D) for D in model_data["D_vectors"]])
         self.learning_iterations = model_data.get("learning_iterations", 0)
         
         # Update agent with loaded parameters
