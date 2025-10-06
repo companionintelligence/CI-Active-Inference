@@ -1,16 +1,9 @@
 """Active Inference agent for CI system behavior prediction and optimization using pymdp."""
 
 import numpy as np
-try:
-    from pymdp.agent import Agent
-    from pymdp import utils
-    from pymdp.maths import softmax
-    PYMDP_AVAILABLE = True
-except ImportError:
-    # Fallback implementation if pymdp is not available
-    PYMDP_AVAILABLE = False
-    print("Warning: pymdp not available, using basic implementation")
-
+from pymdp.agent import Agent
+from pymdp import utils
+from pymdp.maths import softmax
 import math
 import json
 from typing import Dict, List, Any, Optional, Tuple
