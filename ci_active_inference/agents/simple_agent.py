@@ -92,7 +92,7 @@ class SimpleActiveInferenceAgent:
     def predict_future_state(self, current_state: Dict[str, Any], 
                            time_steps: int = 5) -> List[Dict[str, Any]]:
         """
-        Predict future states using Active Inference.
+        Predict future states using Active Inference with enhanced multi-step planning.
         
         Args:
             current_state: Current system state
@@ -144,6 +144,89 @@ class SimpleActiveInferenceAgent:
             self.recent_predictions = self.recent_predictions[-50:]
         
         return predictions
+    
+    def get_multi_step_plan(self, current_state: Dict[str, Any], 
+                           horizon: int = 10) -> Dict[str, Any]:
+        """
+        Generate sophisticated multi-step plan using advanced planning algorithms.
+        
+        Args:
+            current_state: Current system state
+            horizon: Planning horizon
+            
+        Returns:
+            Multi-step plan with policy tree and utilities
+        """
+        if self.matrices is None:
+            return {"error": "Agent not initialized with data"}
+        
+        try:
+            from ..planning.multi_step_planner import MultiStepPlanner
+            
+            # Create planner with current matrices
+            planner = MultiStepPlanner(self.matrices, max_horizon=horizon)
+            
+            # Encode current observations and infer beliefs
+            observations = self.encode_observations(current_state)
+            beliefs = self.matrices.infer_states(observations)
+            
+            # Generate multi-step plan
+            action_sequence, expected_utility = planner.plan_multi_step(beliefs, horizon)
+            
+            # Get planning statistics
+            planning_stats = planner.get_planning_statistics()
+            
+            return {
+                "action_sequence": action_sequence,
+                "expected_utility": expected_utility,
+                "horizon": horizon,
+                "planning_stats": planning_stats,
+                "current_beliefs": beliefs,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            return {"error": f"Multi-step planning failed: {str(e)}"}
+    
+    def get_detailed_explanation(self, current_state: Dict[str, Any], 
+                               suggestion_result: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Generate detailed explanation for agent suggestion.
+        
+        Args:
+            current_state: Current system state
+            suggestion_result: Result from recommend_actions
+            
+        Returns:
+            Detailed explanation with causality analysis
+        """
+        if self.matrices is None:
+            return {"error": "Agent not initialized with data"}
+        
+        try:
+            from ..explanation.explanation_generator import ExplanationGenerator
+            
+            # Create explanation generator
+            generator = ExplanationGenerator(self.matrices)
+            
+            # Encode current observations and infer beliefs
+            observations = self.encode_observations(current_state)
+            beliefs = self.matrices.infer_states(observations)
+            
+            # Generate comprehensive explanation
+            explanation = generator.generate_detailed_explanation(
+                current_state=current_state,
+                suggested_action=suggestion_result.get("suggested_action", "no_action"),
+                predicted_default=suggestion_result.get("predicted_default", "unknown"),
+                confidence=suggestion_result.get("confidence", 0.5),
+                efe_breakdown=suggestion_result.get("efe_breakdown", {}),
+                beliefs=beliefs
+            )
+            
+            return explanation
+            
+        except Exception as e:
+            return {"error": f"Explanation generation failed: {str(e)}"}
     
     def recommend_actions(self, current_state: Dict[str, Any]) -> Dict[str, Any]:
         """

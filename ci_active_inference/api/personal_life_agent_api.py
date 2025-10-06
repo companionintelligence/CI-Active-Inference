@@ -37,7 +37,30 @@ class ActionOutcome(BaseModel):
     next_observations: ObservationInput
 
 
-class AgentResponse(BaseModel):
+class MultiStepPlanRequest(BaseModel):
+    """Request for multi-step planning."""
+    digital_behavior: str
+    location_context: str  
+    social_context: str
+    timestamp: Optional[str] = None
+    horizon: int = 10
+
+
+class ExplanationRequest(BaseModel):
+    """Request for detailed explanation."""
+    digital_behavior: str
+    location_context: str
+    social_context: str
+    suggested_action: str
+    predicted_default: str
+    confidence: float
+    timestamp: Optional[str] = None
+
+
+class DataQualityRequest(BaseModel):
+    """Request for data quality assessment."""
+    data_batch: list
+    batch_metadata: Optional[dict] = None
     """Response schema for agent predictions."""
     predicted_default: str
     suggested_action: str
@@ -270,6 +293,227 @@ def _generate_explanation(result: Dict[str, Any]) -> str:
     except Exception as e:
         logger.error(f"Error generating explanation: {e}")
         return f"Suggested action: {result.get('suggested_action', 'no_action')}"
+
+
+# Additional request models for advanced features
+class MultiStepPlanRequest(BaseModel):
+    """Request for multi-step planning."""
+    digital_behavior: str
+    location_context: str  
+    social_context: str
+    timestamp: Optional[str] = None
+    horizon: int = 10
+
+
+class ExplanationRequest(BaseModel):
+    """Request for detailed explanation."""
+    digital_behavior: str
+    location_context: str
+    social_context: str
+    suggested_action: str
+    predicted_default: str
+    confidence: float
+    timestamp: Optional[str] = None
+
+
+class DataQualityRequest(BaseModel):
+    """Request for data quality assessment."""
+    data_batch: list
+    batch_metadata: Optional[dict] = None
+
+
+@app.post("/agent/{user_id}/multi-step-plan")
+async def get_multi_step_plan(user_id: str, request: MultiStepPlanRequest):
+    """
+    Get sophisticated multi-step plan for user.
+    
+    This endpoint uses advanced planning algorithms to generate
+    longer-horizon plans with policy trees.
+    """
+    try:
+        agent = get_user_agent(user_id)
+        
+        # Convert request to state dict
+        current_state = {
+            "digital_behavior": request.digital_behavior,
+            "location_context": request.location_context,
+            "social_context": request.social_context,
+            "timestamp": request.timestamp or datetime.now().isoformat()
+        }
+        
+        # Get multi-step plan
+        plan = agent.get_multi_step_plan(current_state, request.horizon)
+        
+        return plan
+    
+    except Exception as e:
+        logger.error(f"Error in multi-step planning: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/agent/{user_id}/detailed-explanation")
+async def get_detailed_explanation(user_id: str, request: ExplanationRequest):
+    """
+    Get detailed explanation for agent recommendation.
+    
+    This endpoint provides comprehensive explanations including
+    EFE decomposition and causal analysis.
+    """
+    try:
+        agent = get_user_agent(user_id)
+        
+        # Convert request to state dict
+        current_state = {
+            "digital_behavior": request.digital_behavior,
+            "location_context": request.location_context,
+            "social_context": request.social_context,
+            "timestamp": request.timestamp or datetime.now().isoformat()
+        }
+        
+        # Create suggestion result for explanation
+        suggestion_result = {
+            "suggested_action": request.suggested_action,
+            "predicted_default": request.predicted_default,
+            "confidence": request.confidence,
+            "efe_breakdown": {"risk": 0.5, "ambiguity": 0.5}  # Would come from actual agent
+        }
+        
+        # Get detailed explanation
+        explanation = agent.get_detailed_explanation(current_state, suggestion_result)
+        
+        return explanation
+    
+    except Exception as e:
+        logger.error(f"Error in detailed explanation: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/monitoring/data-quality")
+async def assess_data_quality(request: DataQualityRequest):
+    """
+    Assess data quality for a batch of data.
+    
+    This endpoint provides comprehensive data quality assessment
+    including completeness, consistency, accuracy, and timeliness.
+    """
+    try:
+        from ..monitoring.data_quality_monitor import DataQualityMonitor
+        monitor = DataQualityMonitor()
+        
+        # Assess data quality
+        assessment = monitor.assess_data_quality(
+            request.data_batch, 
+            request.batch_metadata
+        )
+        
+        return assessment
+    
+    except Exception as e:
+        logger.error(f"Error in data quality assessment: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/monitoring/anomaly-detection")
+async def detect_anomalies(request: DataQualityRequest):
+    """
+    Detect anomalies in data batch.
+    
+    This endpoint uses statistical and pattern-based methods
+    to identify unusual data patterns.
+    """
+    try:
+        from ..monitoring.anomaly_detector import AnomalyDetector
+        detector = AnomalyDetector()
+        
+        # Detect anomalies
+        anomalies = detector.detect_anomalies(request.data_batch)
+        
+        # Convert anomalies to serializable format
+        anomaly_data = []
+        for anomaly in anomalies:
+            anomaly_data.append({
+                "timestamp": anomaly.timestamp.isoformat(),
+                "anomaly_type": anomaly.anomaly_type,
+                "severity": anomaly.severity,
+                "description": anomaly.description,
+                "confidence": anomaly.confidence,
+                "affected_entity": anomaly.affected_entity,
+                "data": anomaly.data
+            })
+        
+        return {
+            "anomalies": anomaly_data,
+            "total_anomalies": len(anomaly_data),
+            "assessment_time": datetime.now().isoformat()
+        }
+    
+    except Exception as e:
+        logger.error(f"Error in anomaly detection: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/ab-testing/experiments")
+async def list_experiments():
+    """
+    List active and completed A/B testing experiments.
+    """
+    try:
+        from ..ab_testing.ab_test_runner import ABTestRunner
+        runner = ABTestRunner()
+        experiments = runner.experiment_manager.list_experiments()
+        
+        return {
+            "experiments": experiments,
+            "total_count": len(experiments)
+        }
+    
+    except Exception as e:
+        logger.error(f"Error listing experiments: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/ab-testing/experiments")
+async def create_experiment(experiment_config: dict):
+    """
+    Create a new A/B testing experiment for preference variations.
+    """
+    try:
+        from ..ab_testing.ab_test_runner import ABTestRunner
+        runner = ABTestRunner()
+        
+        experiment_id = runner.create_preference_experiment(
+            experiment_name=experiment_config.get("name", "New Experiment"),
+            duration_days=experiment_config.get("duration_days", 7),
+            variant_types=experiment_config.get("variant_types", ["health_focused", "productivity_focused"]),
+            success_metrics=experiment_config.get("success_metrics", ["user_satisfaction", "recommendation_adoption"])
+        )
+        
+        return {
+            "experiment_id": experiment_id,
+            "status": "created",
+            "created_at": datetime.now().isoformat()
+        }
+    
+    except Exception as e:
+        logger.error(f"Error creating experiment: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/ab-testing/experiments/{experiment_id}")
+async def get_experiment_status(experiment_id: str):
+    """
+    Get status and results of an A/B testing experiment.
+    """
+    try:
+        from ..ab_testing.ab_test_runner import ABTestRunner
+        runner = ABTestRunner()
+        status = runner.get_experiment_summary(experiment_id)
+        
+        return status
+    
+    except Exception as e:
+        logger.error(f"Error getting experiment status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # Health check endpoint
