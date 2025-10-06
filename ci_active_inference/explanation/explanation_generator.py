@@ -146,7 +146,7 @@ class ExplanationGenerator:
         """Analyze alternative action options."""
         alternatives = []
         
-        for action in range(self.matrices.num_actions):
+        for action in range(len(self.matrices.B)):
             utility = self._calculate_action_utility(beliefs, action)
             alternatives.append({
                 "action": self._decode_action(action),
