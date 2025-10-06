@@ -28,7 +28,7 @@ class TestDatabase:
             # Check that core tables exist
             tables = [
                 'users', 'tags', 'people', 'places', 'things', 
-                'content', 'events', 'person_tag', 'event_tag'
+                'content', 'events', 'people_content', 'people_events'
             ]
             
             for table in tables:
