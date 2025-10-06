@@ -33,7 +33,7 @@ class TestDatabase:
             
             for table in tables:
                 cursor.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                    "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename = %s",
                     (table,)
                 )
                 result = cursor.fetchone()
@@ -51,11 +51,11 @@ class TestUserDAO:
             # First check if default user already exists
             try:
                 cursor = conn.cursor()
-                cursor.execute("SELECT id FROM users WHERE email = ?", ('demo@ci-active-inference.com',))
+                cursor.execute("SELECT id FROM users WHERE email = %s", ('demo@ci-active-inference.com',))
                 existing_user = cursor.fetchone()
                 if existing_user:
                     # Delete existing user for clean test
-                    cursor.execute("DELETE FROM users WHERE email = ?", ('demo@ci-active-inference.com',))
+                    cursor.execute("DELETE FROM users WHERE email = %s", ('demo@ci-active-inference.com',))
                     conn.commit()
             except Exception:
                 pass  # Table might not exist yet
@@ -157,8 +157,8 @@ class TestEventDAO:
                 'name': 'Test Meeting',
                 'type': 'meeting',
                 'description': 'A test meeting',
-                'start_time': (now + timedelta(hours=1)).isoformat(),
-                'end_time': (now + timedelta(hours=2)).isoformat()
+                'start_time': now + timedelta(hours=1),
+                'end_time': now + timedelta(hours=2)
             }
             
             event = event_dao.create(event_data, test_user['id'])
