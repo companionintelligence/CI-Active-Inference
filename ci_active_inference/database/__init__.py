@@ -1,6 +1,7 @@
-"""Database connection and session management using SQLite implementing CI-Server schema."""
+"""Database connection and session management using PostgreSQL implementing CI-Server schema."""
 
-import sqlite3
+import psycopg2
+import psycopg2.extras
 import os
 import uuid
 from typing import Generator, Dict, Any
@@ -9,15 +10,13 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Database configuration - using SQLite with CI-Server schema
-DATABASE_PATH = os.getenv("DATABASE_PATH", "ci_database.db")
+# Database configuration - using PostgreSQL with CI-Server schema
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://username:password@localhost:5432/ci_database")
 
 
 def get_db_connection():
-    """Get SQLite database connection."""
-    conn = sqlite3.connect(DATABASE_PATH)
-    # Enable foreign key constraints
-    conn.execute("PRAGMA foreign_keys = ON")
+    """Get PostgreSQL database connection."""
+    conn = psycopg2.connect(DATABASE_URL)
     return conn
 
 
@@ -25,7 +24,8 @@ def get_db_connection():
 def get_db_session():
     """Context manager for database sessions."""
     conn = get_db_connection()
-    conn.row_factory = sqlite3.Row  # Enable dict-like access
+    # Use RealDictCursor for dict-like access
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
         yield conn
         conn.commit()
@@ -50,8 +50,8 @@ def create_tables():
                 email TEXT UNIQUE NOT NULL,
                 password TEXT NOT NULL,
                 onboarded BOOLEAN DEFAULT FALSE,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
         
@@ -61,7 +61,7 @@ def create_tables():
                 id TEXT PRIMARY KEY,
                 label TEXT,
                 user_id TEXT NOT NULL,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users (id)
             )
         ''')
@@ -84,10 +84,10 @@ def create_tables():
                 avatar_url TEXT,
                 external_id TEXT,
                 source_url TEXT,
-                source_data TEXT,
+                source_data JSONB,
                 user_id TEXT NOT NULL,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users (id)
             )
         ''')
@@ -99,15 +99,15 @@ def create_tables():
                 type TEXT,
                 name TEXT,
                 geo_format TEXT,
-                geolocation TEXT,
-                location_boundary TEXT,
+                geolocation JSONB,
+                location_boundary JSONB,
                 estimated BOOLEAN DEFAULT FALSE,
                 tracked BOOLEAN DEFAULT FALSE,
                 uploaded BOOLEAN DEFAULT FALSE,
                 parent_id TEXT,
                 user_id TEXT NOT NULL,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (parent_id) REFERENCES places (id),
                 FOREIGN KEY (user_id) REFERENCES users (id)
             )
@@ -118,16 +118,16 @@ def create_tables():
             CREATE TABLE IF NOT EXISTS locations (
                 id TEXT PRIMARY KEY,
                 identifier TEXT,
-                datetime TEXT,
+                datetime TIMESTAMP,
                 geo_format TEXT,
-                geolocation TEXT,
+                geolocation JSONB,
                 estimated BOOLEAN DEFAULT FALSE,
                 tracked BOOLEAN DEFAULT FALSE,
                 uploaded BOOLEAN DEFAULT FALSE,
                 place_id TEXT,
                 user_id TEXT NOT NULL,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (place_id) REFERENCES places (id),
                 FOREIGN KEY (user_id) REFERENCES users (id)
             )
@@ -140,15 +140,15 @@ def create_tables():
                 type TEXT,
                 name TEXT,
                 description TEXT,
-                start_time TEXT,
-                end_time TEXT,
+                start_time TIMESTAMP,
+                end_time TIMESTAMP,
                 external_id TEXT,
                 source_url TEXT,
-                source_data TEXT,
+                source_data JSONB,
                 user_id TEXT NOT NULL,
                 connection_id TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users (id)
             )
         ''')
@@ -164,11 +164,11 @@ def create_tables():
                 mimetype TEXT,
                 external_id TEXT,
                 source_url TEXT,
-                source_data TEXT,
+                source_data JSONB,
                 user_id TEXT NOT NULL,
                 event_id TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users (id),
                 FOREIGN KEY (event_id) REFERENCES events (id)
             )
@@ -183,11 +183,11 @@ def create_tables():
                 description TEXT,
                 external_id TEXT,
                 source_url TEXT,
-                source_data TEXT,
+                source_data JSONB,
                 user_id TEXT NOT NULL,
                 event_id TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users (id),
                 FOREIGN KEY (event_id) REFERENCES events (id)
             )
@@ -203,11 +203,11 @@ def create_tables():
                 identifier TEXT,
                 external_id TEXT,
                 source_url TEXT,
-                source_data TEXT,
+                source_data JSONB,
                 user_id TEXT NOT NULL,
                 person_id TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users (id),
                 FOREIGN KEY (person_id) REFERENCES people (id)
             )
@@ -216,10 +216,10 @@ def create_tables():
         # Junction tables for many-to-many relationships
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS person_tag (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 person_id TEXT NOT NULL,
                 tag_id TEXT NOT NULL,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (person_id) REFERENCES people (id),
                 FOREIGN KEY (tag_id) REFERENCES tags (id)
             )
@@ -227,10 +227,10 @@ def create_tables():
         
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS event_tag (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 event_id TEXT NOT NULL,
                 tag_id TEXT NOT NULL,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (event_id) REFERENCES events (id),
                 FOREIGN KEY (tag_id) REFERENCES tags (id)
             )
@@ -238,10 +238,10 @@ def create_tables():
         
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS content_tag (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 content_id TEXT NOT NULL,
                 tag_id TEXT NOT NULL,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (content_id) REFERENCES content (id),
                 FOREIGN KEY (tag_id) REFERENCES tags (id)
             )
@@ -249,10 +249,10 @@ def create_tables():
         
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS thing_tag (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 thing_id TEXT NOT NULL,
                 tag_id TEXT NOT NULL,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (thing_id) REFERENCES things (id),
                 FOREIGN KEY (tag_id) REFERENCES tags (id)
             )
@@ -260,10 +260,10 @@ def create_tables():
         
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS place_tag (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 place_id TEXT NOT NULL,
                 tag_id TEXT NOT NULL,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (place_id) REFERENCES places (id),
                 FOREIGN KEY (tag_id) REFERENCES tags (id)
             )
@@ -271,10 +271,10 @@ def create_tables():
         
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS event_person (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 event_id TEXT NOT NULL,
                 person_id TEXT NOT NULL,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (event_id) REFERENCES events (id),
                 FOREIGN KEY (person_id) REFERENCES people (id)
             )
