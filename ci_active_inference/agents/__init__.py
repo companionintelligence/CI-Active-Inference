@@ -3,6 +3,7 @@
 from .simple_agent import SimpleActiveInferenceAgent
 from .pymdp_agent import PyMDPActiveInferenceAgent
 from .behavior_optimizer import CIBehaviorOptimizer
+from .personal_life_agent import PersonalLifeAgent
 
 # Use simplified agent by default (pymdp may not be available)
 try:
@@ -14,5 +15,6 @@ __all__ = [
     'SimpleActiveInferenceAgent',
     'PyMDPActiveInferenceAgent',
     'CIActiveInferenceAgent', 
-    'CIBehaviorOptimizer'
+    'CIBehaviorOptimizer',
+    'PersonalLifeAgent'
 ]
