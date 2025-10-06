@@ -146,7 +146,7 @@ class ExperimentManager:
         if experiment_id not in self.active_experiments:
             return False
         
-        if user_id not in self.user_allocations.get(user_id, {}):
+        if experiment_id not in self.user_allocations.get(user_id, {}):
             return False
         
         experiment = self.active_experiments[experiment_id]
