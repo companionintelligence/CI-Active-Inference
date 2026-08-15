@@ -8,13 +8,20 @@ import os
 import shutil
 from contextlib import contextmanager
 
-from ci_active_inference.database import get_db_session, create_tables
-from ci_active_inference.database.dao import UserDAO
+try:
+    from ci_active_inference.database import get_db_session, create_tables
+    from ci_active_inference.database.dao import UserDAO
+except ImportError:  # forage tests do not need the old slopbox DB
+    get_db_session = None
+    create_tables = None
+    UserDAO = None
 
 
 @pytest.fixture(scope="session")
 def test_db():
     """Create a temporary test database."""
+    if create_tables is None:
+        pytest.skip("ci_active_inference database extras are not installed")
     # Create temporary database file
     db_fd, db_path = tempfile.mkstemp(suffix='.db')
     os.close(db_fd)

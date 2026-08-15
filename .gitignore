@@ -106,3 +106,6 @@ logs/
 # Temporary files
 tmp/
 temp/
+
+# Copyrighted / confidential paper PDFs stay local
+papers/**/*.pdf
