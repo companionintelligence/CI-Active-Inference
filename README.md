@@ -4,7 +4,16 @@ Experimental
 
 <p align="center"><strong>Active Inference Agent</strong></p>
 
-<p align="center"><a href="#quick-setup-linux">Get started</a> · <a href="https://docs.ci.computer/docs/reference/open-source-systems">Systems map</a></p>
+[![release](https://img.shields.io/badge/release-not%20published-757575?style=flat-square)](https://github.com/companionintelligence/CI-Active-Inference/releases)
+[![platform](https://img.shields.io/badge/platform-Python%20%C2%B7%20FastAPI-0a6358?style=flat-square)](https://github.com/companionintelligence/CI-Active-Inference)
+[![License](https://img.shields.io/badge/license-Commercial%20Standard-8a5a00?style=flat-square)](LICENSE.md)
+[![Discord](https://img.shields.io/badge/chat-Discord-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.com/invite/yQp9hwpzAa)
+
+<p align="center"><a href="#quick-setup-linux">Get started</a> · <a href="https://docs.ci.computer/docs/reference/open-source-systems">Systems map</a> · <a href="README.md#additional-resources">Documentation</a></p>
+
+<p align="center">
+  <a href="#quick-setup-linux"><img src="https://img.shields.io/badge/Quick%20setup-Quick%20setup-0a6358?style=for-the-badge&logo=python&logoColor=white" alt="Quick setup" height="30"></a>
+</p>
 
 ## Quick Setup (Linux)
 
@@ -106,6 +115,16 @@ See `requirements.txt` for complete list.
 ---
 
 This repository provides a comprehensive development plan for implementing a personalized Active Inference agent using `pymdp` that leverages your personal data to predict behavior and suggest optimal actions for health and happiness.
+
+
+## Features
+
+| Feature | What it provides |
+|---|---|
+| **Agent simulations** | Model hidden states, observations, actions and preferences with active-inference loops. |
+| **Data-backed learning** | Build matrices from personal event data and persist local experiments. |
+| **Service interfaces** | Use the Python entry points, optional FastAPI service and CLI for experiments. |
+
 
 ## Quick Start
 
@@ -707,6 +726,20 @@ def build_B_matrix_from_transitions(df, state_col, action_col):
 ```
 
 ---
+
+
+## How it fits together
+
+The data adapters prepare observations, the agent model evaluates states and actions, and the service or CLI returns suggestions while persistence stays in the configured local database.
+
+```mermaid
+flowchart LR
+  Source[Memory or seed data] --> Features[Observation and state features]
+  Features --> Model[Active inference model]
+  Model --> Policy[Action or suggestion]
+  Model <--> Store[(SQLite or PostgreSQL)]
+  API[FastAPI or CLI] --> Model
+```
 
 ## 9. Service Layering (Python + TypeScript)
 
