@@ -1,7 +1,5 @@
-# PRIVATE AND CONFIDENTIAL 
-### COPYRIGHT 2025 - DO NOT DISTRIBUTE
-# PROPERTY OF COMPANION INTELLIGENCE - LIFESCOPE INC
-
+Experimental 
+ 
 # CI Personalized Active Inference Agent
 
 ## Quick Setup (Linux)
