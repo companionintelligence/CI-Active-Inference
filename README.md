@@ -1,6 +1,10 @@
 Experimental 
  
-# CI Personalized Active Inference Agent
+<h1 align="center">CI Personalized Active Inference Agent</h1>
+
+<p align="center"><strong>Active Inference Agent</strong></p>
+
+<p align="center"><a href="#quick-setup-linux">Get started</a></p>
 
 ## Quick Setup (Linux)
 
