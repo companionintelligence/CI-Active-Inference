@@ -1073,4 +1073,4 @@ Start with Phase 1 and iterate rapidly through the validation cycle to build con
 - [pymdp Documentation](https://pymdp-rtd.readthedocs.io/): Official Active Inference framework docs
 - [Active Inference: A Process Theory](https://www.fil.ion.ucl.ac.uk/~karl/A%20tutorial%20on%20the%20free-energy%20framework.pdf): Theoretical foundations
 - [FastAPI Documentation](https://fastapi.tiangolo.com/): Backend framework guide
-- [React Documentation](https://reactjs.org/docs/): Frontend framework guide
+- [React Documentation](https://react.dev/learn): Frontend framework guide
