@@ -4,14 +4,14 @@ Experimental
 
 <p align="center"><strong>Active Inference Agent</strong></p>
 
-<p align="center"><a href="#quick-setup-linux">Get started</a></p>
+<p align="center"><a href="#quick-setup-linux">Get started</a> · <a href="https://docs.ci.computer/docs/reference/open-source-systems">Systems map</a></p>
 
 ## Quick Setup (Linux)
 
 1. **Clone and setup the environment:**
    ```bash
-   git clone https://github.com/companionintelligence/CI-Active-Inference-Slopbox.git
-   cd CI-Active-Inference-Slopbox
+   git clone https://github.com/companionintelligence/CI-Active-Inference.git
+   cd CI-Active-Inference
    ./setup.sh
    ```
 
@@ -111,8 +111,8 @@ This repository provides a comprehensive development plan for implementing a per
 
 ```bash
 # Clone the repository
-git clone https://github.com/companionintelligence/CI-Active-Inference-Slopbox.git
-cd CI-Active-Inference-Slopbox
+git clone https://github.com/companionintelligence/CI-Active-Inference.git
+cd CI-Active-Inference
 
 # Install dependencies
 pip install -r requirements.txt
