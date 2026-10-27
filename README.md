@@ -1078,3 +1078,27 @@ Start with Phase 1 and iterate rapidly through the validation cycle to build con
 - [Active Inference: A Process Theory](https://www.fil.ion.ucl.ac.uk/~karl/A%20tutorial%20on%20the%20free-energy%20framework.pdf): Theoretical foundations
 - [FastAPI Documentation](https://fastapi.tiangolo.com/): Backend framework guide
 - [React Documentation](https://react.dev/learn): Frontend framework guide
+
+<!-- companion-hub-readme-deep-review -->
+
+## Runtime requirements and configuration
+
+| Area | Supported setup |
+|---|---|
+| Operating system | Linux; setup documentation targets Ubuntu 20.04 or later |
+| Python | 3.8 or later |
+| Resources | At least 2 GB RAM and 1 GB free disk space |
+| Database | SQLite by default; PostgreSQL can be selected with `DATABASE_URL` |
+| API | FastAPI runner; interactive API docs at `/docs` |
+
+The main configuration knobs are read from `.env`: `INFERENCE_UPDATE_INTERVAL`, `PREDICTION_HORIZON`, `LEARNING_RATE`, `API_HOST`, `API_PORT`, and `LOG_LEVEL`. Keep `.env` local and use `.env.example` as the template. See [SETUP.md](SETUP.md) and [TESTING.md](TESTING.md) for the full setup and verification steps.
+
+```mermaid
+flowchart LR
+  Env[.env and database] --> App[Active Inference service]
+  App --> Agents[Agents and learning loop]
+  Agents --> Store[(SQLite or PostgreSQL)]
+  App --> API[FastAPI /api]
+  API --> Client[Local client or demo]
+```
+
