@@ -14,9 +14,10 @@ redistributing this repository or shipping a binary built from it.
 
 ## First-party code
 
-Except as noted above, the contents of this repository are
-Copyright © LifeScope INC, DBA Companion Intelligence (<https://ci.computer>),
-licensed under the terms in [LICENSE](LICENSE) / [LICENSE.md](LICENSE.md).
+Except as noted above, the contents of this repository are licensed under the
+[PolyForm Noncommercial License 1.0.0](LICENSE).
+
+Required Notice: Copyright LifeScope INC, DBA Companion Intelligence (https://ci.computer)
 
 ---
 
