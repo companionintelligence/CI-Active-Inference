@@ -5,6 +5,11 @@ setup(
     version="0.1.0",
     description="Active Inference prediction system for CI Server database",
     author="Companion Intelligence",
+    license="PolyForm-Noncommercial-1.0.0",
+    classifiers=[
+        "License :: Other/Proprietary License",
+        "Programming Language :: Python :: 3",
+    ],
     packages=find_packages(),
     install_requires=[
         "psycopg2-binary>=2.9.0",
