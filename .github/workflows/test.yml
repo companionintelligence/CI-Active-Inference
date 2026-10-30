@@ -1,0 +1,99 @@
+name: Test
+
+# Dispatch-only, like every workflow in this organisation: hosted CI is gated, so nothing
+# runs on push or pull_request. A workflow can be dispatched only once its file is on the
+# default branch. Then, for any branch:
+#
+#   gh workflow run test.yml -R companionintelligence/CI-Active-Inference --ref <branch>
+#   gh workflow run test.yml -R companionintelligence/CI-Active-Inference --ref <branch> -f full_suite=true
+#
+# `tests` runs the test suite from the source tree on Python 3.10 to 3.14, minus the tests
+# that cannot pass on a plain hosted runner. .github/scripts/run-gate-tests.sh lists them,
+# each with its reason, and pypi-publish.yml runs the same script against the installed
+# wheel. `package` builds the sdist and the wheel, checks them the way a release does, and
+# smoke-tests the installed wheel, so the packaging cannot rot between releases.
+#
+# No secrets, no id-token and no write permission: this workflow cannot publish anything.
+on:
+  workflow_dispatch:
+    inputs:
+      full_suite:
+        description: "Run every test, including the ones the default run leaves out (expected to fail)"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  tests:
+    name: Tests (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install the dependencies
+        run: |
+          set -euo pipefail
+          # requirements.txt is the repository's own list (runtime and pytest). The test client
+          # that fastapi.testclient needs is not in it: starlette 1.x wants httpx2, which needs
+          # Python 3.11, and the starlette that Python 3.10 resolves to wants httpx.
+          python -m pip install -r requirements.txt \
+            "httpx2>=2.0.0; python_version >= '3.11'" \
+            "httpx>=0.27,<0.29; python_version < '3.11'"
+
+      - name: Run the tests
+        env:
+          FULL_SUITE: ${{ inputs.full_suite }}
+        run: bash .github/scripts/run-gate-tests.sh -q
+
+  package:
+    name: Build, check and install the package
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Build the sdist and the wheel, and check them
+        run: |
+          set -euo pipefail
+          python -m pip install "build==1.6.1" "twine==7.0.0"
+          python -m build
+          python -m twine check --strict dist/*
+          project="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["name"])')"
+          version="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          python .github/scripts/check_dist.py --dist dist --project "${project}" \
+            --version "${version}" --commit "$(git rev-parse HEAD)"
+
+      - name: Install the wheel into a clean virtual environment and smoke-test it
+        run: |
+          set -euo pipefail
+          project="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["name"])')"
+          version="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          python -m venv "${RUNNER_TEMP}/wheel-env"
+          "${RUNNER_TEMP}/wheel-env/bin/python" -m pip install dist/*.whl
+          "${RUNNER_TEMP}/wheel-env/bin/python" -m pip check
+          cd "$(mktemp -d)"
+          "${RUNNER_TEMP}/wheel-env/bin/python" -I "${GITHUB_WORKSPACE}/.github/scripts/smoke_installed.py" --project "${project}" --version "${version}"

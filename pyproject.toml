@@ -1,0 +1,52 @@
+[build-system]
+# PEP 639 licence metadata (an SPDX expression in `license = "..."`, plus `license-files`)
+# needs setuptools 77 or newer. 77.0.3, the last 77.0.x release, is the floor used here;
+# 77.0.0 and 77.0.2 are not on PyPI.
+requires = ["setuptools>=77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ci-active-inference"
+version = "0.1.0"
+description = "Active Inference prediction system for CI Server database"
+# This file becomes the PyPI project description. To use another file, add its name to
+# SDIST_TOP_LEVEL in .github/scripts/check_dist.py. Dropping this line makes both
+# `twine check --strict` (no description) and check_dist.py (no content type) fail.
+readme = "README.md"
+# 3.10 because ci_forage.api needs it: its pydantic models use `str | None`, which does
+# not evaluate on 3.9. README.md, SETUP.md and setup.sh still say 3.8+.
+requires-python = ">=3.10"
+# The SPDX identifier of PolyForm Noncommercial 1.0.0, the licence in LICENSE. setuptools
+# refuses a licence expression next to a `License ::` classifier, so the old
+# "License :: Other/Proprietary License" classifier is gone.
+license = "PolyForm-Noncommercial-1.0.0"
+# PolyForm asks for the `Required Notice:` lines to travel with the software, and both of
+# these files carry one.
+license-files = ["LICENSE", "NOTICE.md"]
+authors = [{ name = "Companion Intelligence" }]
+classifiers = [
+    "Programming Language :: Python :: 3",
+]
+# The same list as the old setup.py. ci_active_inference.agents also imports pymdp, which
+# is declared neither here nor in requirements.txt.
+dependencies = [
+    "psycopg2-binary>=2.9.0",
+    "numpy>=1.21.0",
+    "pandas>=1.3.0",
+    "scipy>=1.7.0",
+    "python-dotenv>=0.19.0",
+    "pydantic>=1.8.0",
+    "sqlalchemy>=1.4.0",
+    "asyncio-mqtt>=0.10.0",
+    "fastapi>=0.70.0",
+    "uvicorn>=0.15.0",
+]
+
+[project.urls]
+Source = "https://github.com/companionintelligence/CI-Active-Inference"
+Issues = "https://github.com/companionintelligence/CI-Active-Inference/issues"
+
+[tool.setuptools.packages.find]
+# setup.py's find_packages() also picked up `tests` and `tests.forage`, so the v0.1.0 wheel
+# installed a top-level `tests` package into site-packages.
+include = ["ci_active_inference*", "ci_forage*"]
