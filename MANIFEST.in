@@ -1,0 +1,5 @@
+# The wheel carries only ci_active_inference and ci_forage (see pyproject.toml).
+# The sdist also carries the whole test suite, so it can be run from the unpacked
+# archive; setuptools alone would add only tests/test_*.py, without conftest.py and
+# the __init__.py files those tests need.
+recursive-include tests *.py

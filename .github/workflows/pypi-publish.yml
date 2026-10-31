@@ -1,0 +1,604 @@
+name: Publish to PyPI
+
+# Dispatch-only, like the other publish workflows in this organisation (CI-Hermes and
+# CI-OpenClaw npm-publish.yml): there is no push or tag trigger. Nothing is uploaded until
+# someone dispatches this from `main` with an existing tag and target=testpypi or
+# target=pypi, and, for PyPI, a reviewer approves the `pypi` environment.
+#
+# Four jobs, and only the last two hold a credential:
+#
+#   build            Checks the tag, builds the sdist and the wheel, checks them, records
+#                    their SHA-256, keeps them as an artifact. It runs the repository's own
+#                    build code and has no id-token.
+#   smoke            Installs the built wheel (and, on one Python, the sdist) into clean
+#                    virtual environments on Python 3.10 to 3.14, smoke-tests them and runs
+#                    the test suite against the INSTALLED wheel. No id-token either.
+#   publish-testpypi, publish-pypi
+#                    Download the artifact, check it against the SHA-256 that `build`
+#                    reported, and upload exactly those files, to TestPyPI or to PyPI. No
+#                    checkout and no repository code. These are the only jobs with
+#                    `id-token: write`, and each waits for its environment.
+#
+# ── RELEASING ────────────────────────────────────────────────────────────────────
+#
+#   1. Bump `version` in pyproject.toml and `__version__` in ci_active_inference/__init__.py
+#      to the same value. This workflow refuses a release where they differ. Do not
+#      reuse v0.1.0: that tag has no pyproject.toml, and PyPI would hold a different
+#      wheel from the one attached to that GitHub release.
+#   2. Merge, then tag the merge commit v<version> (for example v0.1.1) and push the tag.
+#      The tag has to be reachable from `main`; the workflow refuses one that is not.
+#   3. Rehearse. This builds, checks and tests, and uploads nothing; it needs none of the
+#      setup below:
+#        gh workflow run pypi-publish.yml -R companionintelligence/CI-Active-Inference \
+#          --ref main -f tag=v<version> -f target=build-only
+#      The run summary shows the file names and SHA-256 of that build. A later run of the
+#      same tag builds again: the wheel comes out with the same SHA-256 while setuptools has
+#      not changed, the sdist never does.
+#   4. Optional rehearsal of the upload itself: -f target=testpypi. It needs the `testpypi`
+#      environment and the TestPyPI pending publisher (setup a and b below). A release
+#      needs a version number that differs from every earlier one, so plan on one
+#      rehearsal upload per version; another after a change needs a new version.
+#   5. Release: -f target=pypi. It needs the `pypi` environment and the PyPI pending
+#      publisher (setup a and b below). When the run reaches `publish-pypi`, open it, read
+#      the summary of the `build` job and approve the `pypi` environment ("Review
+#      deployments"). GitHub lets a run wait up to 30 days for that approval. The build
+#      artifact is kept for 31 days, or for the repository's retention maximum if that is
+#      lower; once it is gone the publish job fails at the download, nothing has been
+#      uploaded, and the fix is to dispatch again.
+#
+#   If a job fails after the upload started, re-run the FAILED JOBS of that run. Do not
+#   dispatch again: the sdist does not rebuild to the same SHA-256, so a second run is
+#   refused as a different file under a published version. The publish step skips files
+#   that are already on the index, and the confirm step compares the index with the
+#   SHA-256 of the run.
+#
+# ── ONE-TIME SETUP: environments and trusted publishers ──────────────────────────
+#
+# There is no API token. `publish` uses PyPI trusted publishing (OIDC): it asks GitHub for
+# an OIDC token (`id-token: write`) and PyPI exchanges it for a short-lived upload token,
+# but only for a project whose trusted publisher names this repository, this workflow
+# file and this environment. PyPI does not check the branch, and anyone with write access
+# can dispatch a copy of this file edited on a branch, so the GitHub environment is the
+# gate: its deployment-branch rule keeps such a run from reaching `publish`, its required
+# reviewer has to approve each run, and the environment name in the trusted publisher keeps
+# a run that dropped `environment:` from getting a token at all. Step a is done once,
+# before the first upload run; step b is timed, so read it:
+#
+#   a. GitHub → Settings → Environments → New environment, named exactly `pypi`. Under
+#      "Required reviewers" add yourself ("Prevent self-review" off if you are the only
+#      reviewer). Under "Deployment branches and tags" choose "Selected branches and tags"
+#      and add the branch rule `main`. Do this BEFORE the first run that reaches
+#      `publish-pypi`: GitHub creates a missing environment on first use, with no
+#      protection at all. Make a second environment, `testpypi`, with the same branch rule
+#      and no reviewer (TestPyPI is a sandbox), if you will use target=testpypi.
+#   b. Pending trusted publishers, one per index, each added shortly before the run that
+#      needs it: TestPyPI before step 4 of RELEASING, PyPI before step 5. PyPI deletes a
+#      pending publisher that has not been used within 30 days of its creation (it emails
+#      a reminder 5 days earlier); add it again if it lapses. The account needs
+#      two-factor authentication (without it the page shows no form) and a verified
+#      primary email address (without it the Add button is disabled), on each index. On
+#      pypi.org, signed in, open https://pypi.org/manage/account/publishing/ and add a
+#      pending publisher for GitHub Actions. The labels below are the form's own; enter
+#      the values exactly as written:
+#        * PyPI Project Name:  ci-active-inference
+#        * Owner:              companionintelligence
+#        * Repository name:    CI-Active-Inference
+#        * Workflow name:      pypi-publish.yml   (the file name, not the `name:` above)
+#        * Environment name:   pypi
+#      For TestPyPI, do the same on https://test.pypi.org/manage/account/publishing/
+#      (a separate site and a separate account, with its own two-factor authentication and
+#      verified email) with Environment name `testpypi`.
+#   c. A pending publisher creates the project when it is first used. It does NOT reserve
+#      the name: if someone else registers `ci-active-inference` first, the pending
+#      publisher is invalidated and the first upload is refused. `build` says on every run
+#      whether the name is free.
+#
+# Third-party actions are pinned to commit SHAs, so a moved tag cannot change what runs
+# next to the credential. Bump them deliberately.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag on main to publish (for example v0.1.1)"
+        required: true
+        type: string
+      target:
+        description: "build-only: build, check and test, upload nothing. testpypi: also upload to TestPyPI. pypi: also upload to PyPI, after the pypi environment is approved."
+        required: true
+        default: build-only
+        type: choice
+        options:
+          - build-only
+          - testpypi
+          - pypi
+
+# One run per release at a time, and never cancel-in-progress: a cancelled upload can
+# leave a version whose files are only half there.
+concurrency:
+  group: pypi-publish-${{ inputs.tag }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # The project name on PyPI, in the trusted publishers and in pyproject.toml. `build`
+  # refuses a tag whose pyproject.toml says anything else.
+  PYPI_PROJECT: ci-active-inference
+
+jobs:
+  build:
+    name: Build and check the distributions
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      project: ${{ steps.release.outputs.project }}
+      version: ${{ steps.release.outputs.version }}
+      tag_commit: ${{ steps.release.outputs.tag_commit }}
+      wheel: ${{ steps.hash.outputs.wheel }}
+      wheel_sha256: ${{ steps.hash.outputs.wheel_sha256 }}
+      sdist: ${{ steps.hash.outputs.sdist }}
+      sdist_sha256: ${{ steps.hash.outputs.sdist_sha256 }}
+      upload: ${{ steps.preflight.outputs.upload }}
+    steps:
+      # refs/tags/... rather than a bare name: actions/checkout resolves a bare ref as a
+      # branch before it tries a tag, so a branch shadowing the tag would be built while
+      # the checks below looked at the tag. The whole history is needed to prove that the
+      # tag is reachable from the default branch.
+      - name: Check out the tag being released
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ format('refs/tags/{0}', inputs.tag) }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install the build tools
+        run: python -m pip install "build==1.6.1" "twine==7.0.0"
+
+      - name: Check the tag and read the version
+        id: release
+        # INPUT_TAG, TARGET and DEFAULT_BRANCH come through env rather than a ${{ }}
+        # interpolation: the dispatch inputs are user-supplied, and interpolating them into
+        # the script body would let a crafted value break out of the quoting and run
+        # arbitrary commands in a job that builds what gets published.
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          TARGET: ${{ inputs.target }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$*"; exit 1; }
+
+          # Without this, a branch named like a version could stand in for the tag.
+          git rev-parse -q --verify "refs/tags/${INPUT_TAG}" >/dev/null \
+            || fail "${INPUT_TAG} is not a tag in this repository"
+          tag_commit="$(git rev-parse "refs/tags/${INPUT_TAG}^{commit}")"
+          [[ "$(git rev-parse HEAD)" == "${tag_commit}" ]] \
+            || fail "the checkout is at $(git rev-parse HEAD), not at the commit of ${INPUT_TAG} (${tag_commit})"
+
+          # A tag is not reviewed code: anyone with write access can push one that points at
+          # a commit on a branch nobody looked at. Only what is on the default branch has
+          # been through the merge.
+          git rev-parse -q --verify "refs/remotes/origin/${DEFAULT_BRANCH}" >/dev/null \
+            || fail "origin/${DEFAULT_BRANCH} was not fetched"
+          git merge-base --is-ancestor "${tag_commit}" "origin/${DEFAULT_BRANCH}" \
+            || fail "${INPUT_TAG} (${tag_commit}) is not reachable from ${DEFAULT_BRANCH}. Merge the release commit first, then tag the merge commit."
+
+          [[ -f pyproject.toml ]] \
+            || fail "${INPUT_TAG} has no pyproject.toml, so it predates this workflow. Bump the version, merge, and tag the new commit."
+          project="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["name"])')"
+          version="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+
+          normalised="$(python -c 'import re, sys; print(re.sub(r"[-_.]+", "-", sys.argv[1]).lower())' "${project}")"
+          [[ "${normalised}" == "${PYPI_PROJECT}" ]] \
+            || fail "pyproject.toml names the project ${project}, but this workflow and its trusted publishers are for ${PYPI_PROJECT}"
+
+          # PyPI stores the normalised form, and a local version (+abc) is refused outright.
+          python -c '
+          import sys
+          from packaging.version import Version
+          parsed = Version(sys.argv[1])
+          assert str(parsed) == sys.argv[1] and parsed.local is None
+          ' "${version}" || fail "version ${version} in pyproject.toml is not a normalised public PEP 440 version"
+
+          [[ "${INPUT_TAG}" == "v${version}" ]] \
+            || fail "tag ${INPUT_TAG} does not match version ${version} in pyproject.toml. Bump the version, merge, and tag v${version} before publishing."
+
+          # __version__ is a second hand-kept copy of the version. An empty match fails too:
+          # if the line is ever reformatted, a check that quietly finds nothing would pass.
+          package_version="$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' ci_active_inference/__init__.py)"
+          [[ -n "${package_version}" ]] \
+            || fail 'could not read __version__ from ci_active_inference/__init__.py; this check expects: __version__ = "x.y.z"'
+          [[ "${package_version}" == "${version}" ]] \
+            || fail "ci_active_inference/__init__.py says ${package_version} but pyproject.toml says ${version}. Bump both."
+
+          # The environment's branch rule enforces this too; failing here says so in the
+          # first minute instead of after the build.
+          if [[ "${TARGET}" != "build-only" ]]; then
+            [[ "${GITHUB_REF}" == "refs/heads/${DEFAULT_BRANCH}" ]] \
+              || fail "an upload has to be dispatched from ${DEFAULT_BRANCH}, and this run is on ${GITHUB_REF}. Run: gh workflow run pypi-publish.yml --ref ${DEFAULT_BRANCH} -f tag=${INPUT_TAG} -f target=${TARGET}"
+          fi
+
+          {
+            echo "project=${PYPI_PROJECT}"
+            echo "version=${version}"
+            echo "tag_commit=${tag_commit}"
+            echo "source_date_epoch=$(git log -1 --format=%ct "${tag_commit}")"
+          } >> "${GITHUB_OUTPUT}"
+          echo "Release tag ${INPUT_TAG} (${tag_commit}) builds ${PYPI_PROJECT} ${version}; target ${TARGET}"
+
+      - name: Build the sdist and the wheel
+        env:
+          # The commit time of the tag, so that the wheel's file times do not depend on when
+          # the job ran. The sdist's SHA-256 still changes on every build.
+          SOURCE_DATE_EPOCH: ${{ steps.release.outputs.source_date_epoch }}
+        run: |
+          set -euo pipefail
+          rm -rf dist build ./*.egg-info
+          python -m build 2>&1 | tee "${RUNNER_TEMP}/build.log"
+          if grep -qiE '(^|[^a-z])warn' "${RUNNER_TEMP}/build.log"; then
+            echo "::warning::python -m build printed warnings; read the log of this step"
+          fi
+
+      # twine does not render Markdown (it maps text/markdown to no renderer), so this step
+      # checks the metadata and that a description exists, not how the README will look on
+      # PyPI. Read the project page of the first TestPyPI upload.
+      - name: Check the metadata with twine
+        run: python -m twine check --strict dist/*
+
+      - name: Check the distributions against the tag
+        env:
+          TAG_COMMIT: ${{ steps.release.outputs.tag_commit }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          python .github/scripts/check_dist.py --dist dist --project "${PYPI_PROJECT}" \
+            --version "${VERSION}" --commit "${TAG_COMMIT}"
+
+      - name: Record the SHA-256 of each file
+        id: hash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          wheels=(dist/*.whl)
+          sdists=(dist/*.tar.gz)
+          if [[ ${#wheels[@]} -ne 1 || ${#sdists[@]} -ne 1 || "$(find dist -type f | wc -l | tr -d ' ')" != "2" ]]; then
+            echo "::error::dist/ has to hold exactly one wheel and one sdist"
+            ls -la dist
+            exit 1
+          fi
+          {
+            echo "wheel=$(basename "${wheels[0]}")"
+            echo "wheel_sha256=$(sha256sum "${wheels[0]}" | cut -d' ' -f1)"
+            echo "sdist=$(basename "${sdists[0]}")"
+            echo "sdist_sha256=$(sha256sum "${sdists[0]}" | cut -d' ' -f1)"
+          } >> "${GITHUB_OUTPUT}"
+
+      # Asks the target index what it already holds. For build-only it asks PyPI and only
+      # warns, and a network failure does not fail the rehearsal (continue-on-error): it
+      # shows as an error annotation, so a green rehearsal does not by itself show that the
+      # runner could reach the index. Read this step's log. An upload run fails here.
+      - name: Ask the package index what it already holds
+        id: preflight
+        continue-on-error: ${{ inputs.target == 'build-only' }}
+        env:
+          TARGET: ${{ inputs.target }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          case "${TARGET}" in
+            testpypi) index=https://test.pypi.org; mode=enforce ;;
+            pypi)     index=https://pypi.org;      mode=enforce ;;
+            *)        index=https://pypi.org;      mode=inform ;;
+          esac
+          python .github/scripts/pypi_preflight.py --index-url "${index}" --project "${PYPI_PROJECT}" \
+            --version "${VERSION}" --dist dist --mode "${mode}"
+
+      - name: Keep the distributions for the next jobs
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: python-package-distributions
+          path: dist/
+          if-no-files-found: error
+          # The upload jobs download this only after the environment is approved, and GitHub
+          # lets a run wait up to 30 days for that (its "Gate approval time" limit). If the
+          # repository caps retention lower, upload-artifact warns and uses the cap.
+          retention-days: 31
+          # A re-run of this job in the same run would otherwise fail on the name.
+          overwrite: true
+
+      - name: Write the run summary
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          TARGET: ${{ inputs.target }}
+          TAG_COMMIT: ${{ steps.release.outputs.tag_commit }}
+          VERSION: ${{ steps.release.outputs.version }}
+          WHEEL: ${{ steps.hash.outputs.wheel }}
+          WHEEL_SHA256: ${{ steps.hash.outputs.wheel_sha256 }}
+          SDIST: ${{ steps.hash.outputs.sdist }}
+          SDIST_SHA256: ${{ steps.hash.outputs.sdist_sha256 }}
+          UPLOAD: ${{ steps.preflight.outputs.upload }}
+        run: |
+          set -euo pipefail
+          case "${TARGET}" in
+            build-only) outcome="build only: nothing is uploaded" ;;
+            testpypi) outcome="uploads these files to TestPyPI after the smoke tests pass" ;;
+            *) outcome="uploads these files to PyPI after the smoke tests pass and the pypi environment is approved" ;;
+          esac
+          if [[ "${TARGET}" != "build-only" && "${UPLOAD}" != "true" ]]; then
+            outcome="nothing to upload: the index already holds these files"
+          fi
+          {
+            echo "### ${PYPI_PROJECT} ${VERSION}"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Release tag | \`${INPUT_TAG}\` at \`${TAG_COMMIT}\` |"
+            echo "| Wheel | \`${WHEEL}\`, $(wc -c < "dist/${WHEEL}" | tr -d ' ') bytes |"
+            echo "| Wheel SHA-256 | \`${WHEEL_SHA256}\` |"
+            echo "| Sdist | \`${SDIST}\`, $(wc -c < "dist/${SDIST}" | tr -d ' ') bytes |"
+            echo "| Sdist SHA-256 | \`${SDIST_SHA256}\` |"
+            echo "| Target | \`${TARGET}\` |"
+            echo "| Outcome | ${outcome} |"
+            echo
+            echo "<details><summary>Wheel contents</summary>"
+            echo
+            echo '```'
+            unzip -Z1 "dist/${WHEEL}"
+            echo '```'
+            echo
+            echo "</details>"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  smoke:
+    name: Install and test (Python ${{ matrix.python }})
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      # Only tests/ and .github/scripts/ are used from this checkout. The package under
+      # test is the one installed from the artifact. The commit is the one `build` resolved
+      # and checked, not the tag name again: if the tag were moved while this run was in
+      # progress, the tests and scripts would otherwise come from another commit than the
+      # one that was built.
+      - name: Check out the commit that was built
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.build.outputs.tag_commit }}
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Download the distributions that were built
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: python-package-distributions
+          path: dist
+
+      - name: Check they are the files the build job reported
+        env:
+          WHEEL: ${{ needs.build.outputs.wheel }}
+          WHEEL_SHA256: ${{ needs.build.outputs.wheel_sha256 }}
+          SDIST: ${{ needs.build.outputs.sdist }}
+          SDIST_SHA256: ${{ needs.build.outputs.sdist_sha256 }}
+        run: |
+          set -euo pipefail
+          cd dist
+          shopt -s dotglob nullglob
+          files=(*)
+          [[ ${#files[@]} -eq 2 ]] || { echo "::error::dist/ should hold the two files the build job reported"; ls -la; exit 1; }
+          for file in "${files[@]}"; do
+            [[ "${file}" == "${WHEEL}" || "${file}" == "${SDIST}" ]] \
+              || { echo "::error::dist/ holds ${file}, which the build job did not report"; exit 1; }
+          done
+          printf '%s  %s\n' "${WHEEL_SHA256}" "${WHEEL}" "${SDIST_SHA256}" "${SDIST}" | sha256sum --check --strict
+
+      - name: Install the wheel into a clean virtual environment
+        env:
+          WHEEL: ${{ needs.build.outputs.wheel }}
+        run: |
+          set -euo pipefail
+          python -m venv "${RUNNER_TEMP}/wheel-env"
+          "${RUNNER_TEMP}/wheel-env/bin/python" -m pip install "dist/${WHEEL}"
+          "${RUNNER_TEMP}/wheel-env/bin/python" -m pip check
+
+      - name: Smoke-test the installed wheel
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          cd "$(mktemp -d)"
+          "${RUNNER_TEMP}/wheel-env/bin/python" -I "${GITHUB_WORKSPACE}/.github/scripts/smoke_installed.py" --project "${PYPI_PROJECT}" --version "${VERSION}"
+
+      # tests/ is copied beside nothing but itself, so the only ci_active_inference that
+      # can be imported is the installed one. test.yml runs the same script on the source.
+      - name: Run the tests against the installed wheel
+        run: |
+          set -euo pipefail
+          "${RUNNER_TEMP}/wheel-env/bin/python" -m pip install pytest \
+            "httpx2>=2.0.0; python_version >= '3.11'" \
+            "httpx>=0.27,<0.29; python_version < '3.11'"
+          work="$(mktemp -d)"
+          cp -R tests "${work}/tests"
+          cd "${work}"
+          PATH="${RUNNER_TEMP}/wheel-env/bin:${PATH}" bash "${GITHUB_WORKSPACE}/.github/scripts/run-gate-tests.sh" -q
+
+      # An sdist is built by pip on the installing machine, so it gets its own clean
+      # environment. One Python is enough for that.
+      - name: Install the sdist into a second clean virtual environment and smoke-test it
+        if: matrix.python == '3.12'
+        env:
+          SDIST: ${{ needs.build.outputs.sdist }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          python -m venv "${RUNNER_TEMP}/sdist-env"
+          "${RUNNER_TEMP}/sdist-env/bin/python" -m pip install "dist/${SDIST}"
+          "${RUNNER_TEMP}/sdist-env/bin/python" -m pip check
+          cd "$(mktemp -d)"
+          "${RUNNER_TEMP}/sdist-env/bin/python" -I "${GITHUB_WORKSPACE}/.github/scripts/smoke_installed.py" --project "${PYPI_PROJECT}" --version "${VERSION}"
+
+  # Publishes the files `build` produced and `smoke` tested, and nothing else. Two steps
+  # that matter: download, then upload. No checkout and no repository code.
+  publish-testpypi:
+    name: Publish to TestPyPI
+    needs: [build, smoke]
+    if: inputs.target == 'testpypi' && needs.build.outputs.upload == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/project/${{ needs.build.outputs.project }}/${{ needs.build.outputs.version }}/
+    permissions:
+      id-token: write # trusted publishing: the OIDC token that PyPI exchanges for an upload token
+    steps:
+      - name: Download the distributions that were built
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: python-package-distributions
+          path: dist
+
+      - name: Check they are the files the build job reported
+        env:
+          WHEEL: ${{ needs.build.outputs.wheel }}
+          WHEEL_SHA256: ${{ needs.build.outputs.wheel_sha256 }}
+          SDIST: ${{ needs.build.outputs.sdist }}
+          SDIST_SHA256: ${{ needs.build.outputs.sdist_sha256 }}
+        run: |
+          set -euo pipefail
+          cd dist
+          shopt -s dotglob nullglob
+          files=(*)
+          [[ ${#files[@]} -eq 2 ]] || { echo "::error::dist/ should hold the two files the build job reported"; ls -la; exit 1; }
+          for file in "${files[@]}"; do
+            [[ "${file}" == "${WHEEL}" || "${file}" == "${SDIST}" ]] \
+              || { echo "::error::dist/ holds ${file}, which the build job did not report"; exit 1; }
+          done
+          printf '%s  %s\n' "${WHEEL_SHA256}" "${WHEEL}" "${SDIST_SHA256}" "${SDIST}" | sha256sum --check --strict
+
+      # skip-existing: a re-run of this job after an upload that went through must not fail
+      # on "file exists". The confirm step below compares the index with the SHA-256 of
+      # this run, so a skipped file that is not ours still fails the job.
+      - name: Upload to TestPyPI
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: dist
+          skip-existing: true
+
+      - name: Confirm the index holds these files
+        env:
+          INDEX: https://test.pypi.org
+          PROJECT: ${{ needs.build.outputs.project }}
+          VERSION: ${{ needs.build.outputs.version }}
+          WHEEL: ${{ needs.build.outputs.wheel }}
+          WHEEL_SHA256: ${{ needs.build.outputs.wheel_sha256 }}
+          SDIST: ${{ needs.build.outputs.sdist }}
+          SDIST_SHA256: ${{ needs.build.outputs.sdist_sha256 }}
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+          expected="$(printf '%s  %s\n' "${WHEEL_SHA256}" "${WHEEL}" "${SDIST_SHA256}" "${SDIST}" | sort)"
+          # A new release can take minutes to show up in the JSON API after the upload.
+          for attempt in $(seq 1 20); do
+            if body="$(curl -fsS --max-time 30 "${INDEX}/pypi/${PROJECT}/${VERSION}/json" 2>/dev/null)"; then
+              listed="$(jq -r '.urls[] | "\(.digests.sha256)  \(.filename)"' <<<"${body}" | sort)"
+              if [[ "${listed}" == "${expected}" ]]; then
+                echo "Confirmed: ${INDEX} holds ${PROJECT} ${VERSION} with the SHA-256 of this run."
+                exit 0
+              fi
+            fi
+            echo "Not confirmed yet (attempt ${attempt}/20); waiting for the index."
+            sleep 15
+          done
+          echo "::error::${INDEX} did not list exactly the two files of this run within 5 minutes. Look at ${INDEX}/project/${PROJECT}/${VERSION}/ . If the upload step passed, re-run the failed jobs of this run; if the index lists other files under this version, do not upload again: release a new version number."
+          exit 1
+
+  publish-pypi:
+    name: Publish to PyPI
+    needs: [build, smoke]
+    if: inputs.target == 'pypi' && needs.build.outputs.upload == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # The environment is what the trusted publisher on pypi.org names, and what carries the
+    # required reviewer and the main-only deployment rule. See the header.
+    environment:
+      name: pypi
+      url: https://pypi.org/project/${{ needs.build.outputs.project }}/${{ needs.build.outputs.version }}/
+    permissions:
+      id-token: write # trusted publishing: the OIDC token that PyPI exchanges for an upload token
+    steps:
+      - name: Download the distributions that were built
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: python-package-distributions
+          path: dist
+
+      - name: Check they are the files the build job reported
+        env:
+          WHEEL: ${{ needs.build.outputs.wheel }}
+          WHEEL_SHA256: ${{ needs.build.outputs.wheel_sha256 }}
+          SDIST: ${{ needs.build.outputs.sdist }}
+          SDIST_SHA256: ${{ needs.build.outputs.sdist_sha256 }}
+        run: |
+          set -euo pipefail
+          cd dist
+          shopt -s dotglob nullglob
+          files=(*)
+          [[ ${#files[@]} -eq 2 ]] || { echo "::error::dist/ should hold the two files the build job reported"; ls -la; exit 1; }
+          for file in "${files[@]}"; do
+            [[ "${file}" == "${WHEEL}" || "${file}" == "${SDIST}" ]] \
+              || { echo "::error::dist/ holds ${file}, which the build job did not report"; exit 1; }
+          done
+          printf '%s  %s\n' "${WHEEL_SHA256}" "${WHEEL}" "${SDIST_SHA256}" "${SDIST}" | sha256sum --check --strict
+
+      # Attestations (PEP 740) are on by default and are made from this job's OIDC token.
+      # skip-existing: see the note on the TestPyPI job. The action's README advises against
+      # it where it can be avoided and, with both indexes, to use it for TestPyPI only so
+      # that PyPI fails loudly on a duplicate. It is on here on purpose: without it, a
+      # re-run cannot finish an upload that stopped half-way, because the files already on
+      # the index are refused. The checks that replace that protection are pypi_preflight.py
+      # in `build` (refuses a version whose files have other hashes) and the confirm step
+      # below. To follow the advice instead, delete the line.
+      - name: Upload to PyPI
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+        with:
+          packages-dir: dist
+          skip-existing: true
+
+      - name: Confirm the index holds these files
+        env:
+          INDEX: https://pypi.org
+          PROJECT: ${{ needs.build.outputs.project }}
+          VERSION: ${{ needs.build.outputs.version }}
+          WHEEL: ${{ needs.build.outputs.wheel }}
+          WHEEL_SHA256: ${{ needs.build.outputs.wheel_sha256 }}
+          SDIST: ${{ needs.build.outputs.sdist }}
+          SDIST_SHA256: ${{ needs.build.outputs.sdist_sha256 }}
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+          expected="$(printf '%s  %s\n' "${WHEEL_SHA256}" "${WHEEL}" "${SDIST_SHA256}" "${SDIST}" | sort)"
+          # A new release can take minutes to show up in the JSON API after the upload.
+          for attempt in $(seq 1 20); do
+            if body="$(curl -fsS --max-time 30 "${INDEX}/pypi/${PROJECT}/${VERSION}/json" 2>/dev/null)"; then
+              listed="$(jq -r '.urls[] | "\(.digests.sha256)  \(.filename)"' <<<"${body}" | sort)"
+              if [[ "${listed}" == "${expected}" ]]; then
+                echo "Confirmed: ${INDEX} holds ${PROJECT} ${VERSION} with the SHA-256 of this run."
+                exit 0
+              fi
+            fi
+            echo "Not confirmed yet (attempt ${attempt}/20); waiting for the index."
+            sleep 15
+          done
+          echo "::error::${INDEX} did not list exactly the two files of this run within 5 minutes. Look at ${INDEX}/project/${PROJECT}/${VERSION}/ . If the upload step passed, re-run the failed jobs of this run; if the index lists other files under this version, do not upload again: release a new version number."
+          exit 1
